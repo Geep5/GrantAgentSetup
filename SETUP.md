@@ -100,8 +100,11 @@ close-out. Due Send-Date items override next_run.
 
 ## Phase 6 — optional extras
 
-- **Skills for omp**: symlink any `.agents/skills/<name>` folders into
-  `~/.agents/skills/` — omp discovers them globally (project walk-up + home).
+- **Skills for omp**: two scopes. Global — symlink into `~/.agents/skills/`
+  (every agent on the machine gets it). Per-bot — symlink into
+  `<bot cwd>/.agents/skills/` (omp walks up from its cwd), useful when a
+  skill should reach some bots but not others. Gitignore `.agents/` if the
+  bot cwd lives inside a project repo.
 - **browseruse**: `pipx/npm` per its repo; symlink the venv binaries into
   `~/.local/bin` and keep that dir in .env PATH.
 - **Remotion**: scaffold a workspace (`npx create-video`), note its path in
