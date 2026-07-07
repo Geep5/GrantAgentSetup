@@ -88,7 +88,7 @@ first session is REAL — the agent will greet the human and start work.
 ## Phase 5 — cron
 
 ```
-*/10 * * * * /абс/path/to/start.sh
+*/10 * * * * /abs/path/to/start.sh
 ```
 
 (Stagger the minute — `2-59/10` etc. — if multiple bots share the machine.)
