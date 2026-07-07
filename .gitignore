@@ -1,0 +1,6 @@
+.env
+state/
+logs/
+sessions/
+attachments/
+__pycache__/
