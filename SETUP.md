@@ -126,8 +126,10 @@ close-out. Due Send-Date items override next_run.
   "this does NOT restrict Y" or the model over-complies (see Bias to action).
 - Peer-bot bridges: agents answering can take minutes; on timeout NEVER
   re-ask (the question posted) — `--listen` re-attaches.
-- macOS keychain-backed CLIs (gws etc.) can fail from cron; prefer file-based
-  credential backends where offered.
+- macOS keychain-backed CLIs (gws, gh, etc.) can fail from cron/background
+  shells; prefer file-based credential backends where offered. For GitHub
+  pushes specifically: put `GH_TOKEN=$(gh auth token)` in .env — the gh git
+  credential helper honors it without touching the keychain.
 - If a session wedges: kill pid in `state/lock`, `rm state/lock`, next tick
   resumes it. `rm -rf sessions/main` forces a fresh session (history lost).
 
