@@ -433,18 +433,35 @@ class OmpAgent:
                 bg.join(timeout=2)
 
     def _wait_for_response(self) -> str:
+        """Wait for the turn to FULLY finish and return its text.
+
+        One prompt does not always mean one agent_end: omp's rule engine can
+        interrupt and restart the agent mid-turn (ttsr injections), producing
+        several agent_start/agent_end cycles per prompt. Returning at the
+        first agent_end posts a fragment and orphans the rest. So: after an
+        agent_end, linger briefly; if the agent starts again, keep waiting,
+        and return only the final agent_end's extraction."""
+        QUIET_SECS = 6.0
         deadline = time.time() + AGENT_TIMEOUT
         agent_started = False
+        last_end = None
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
-                return "[Agent timed out — the task may still be running]"
+                if last_end is not None:
+                    return self._extract_text(last_end) or "[No response from agent]"
+                return "[Agent timed out - the task may still be running]"
+            timeout = min(remaining, QUIET_SECS if last_end is not None else 30)
             try:
-                ev = self.event_queue.get(timeout=min(remaining, 30))
+                ev = self.event_queue.get(timeout=timeout)
             except queue.Empty:
+                if last_end is not None:  # quiet after an agent_end: turn is done
+                    return self._extract_text(last_end) or "[No response from agent]"
                 continue
             if ev is None:
-                return "[Agent process crashed — will resume next session]"
+                if last_end is not None:
+                    return self._extract_text(last_end) or "[No response from agent]"
+                return "[Agent process crashed - will resume next session]"
             try:
                 data = json.loads(ev)
             except json.JSONDecodeError:
@@ -454,14 +471,14 @@ class OmpAgent:
                 agent_started = True
             if ev_type in ("tool_execution_start", "tool_execution_end"):
                 tool = (data.get("tool", {}) or {}).get("name") or data.get("toolName") or "tool"
-                log.info("omp %s: %s", "▶" if ev_type.endswith("start") else "✔", tool)
+                log.info("omp %s: %s", "start" if ev_type.endswith("start") else "done", tool)
             if ev_type == "response" and not data.get("success"):
                 error = data.get("error", "unknown error")
-                if not agent_started:
+                if not agent_started and last_end is None:
                     return f"[Agent error: {error}]"
                 log.warning("Steer error (continuing): %s", error)
             if ev_type == "agent_end":
-                return self._extract_text(data) or "[No response from agent]"
+                last_end = data
 
     @staticmethod
     def _extract_text(agent_end_event: dict) -> str:
@@ -476,7 +493,13 @@ class OmpAgent:
         for msg in reversed(agent_end_event.get("messages", [])):
             role = msg.get("role")
             if role == "user":
-                break
+                c = msg.get("content")
+                text = c if isinstance(c, str) else "".join(
+                    b.get("text", "") for b in (c or [])
+                    if isinstance(b, dict) and b.get("type") == "text")
+                if text.lstrip().startswith(("[Discord message from", "[System]")):
+                    break  # a real bridge prompt - this bounds the turn
+                continue  # injected rule-interrupt/summary, not a turn boundary
             if role != "assistant":
                 continue  # toolResult / developer entries
             texts = [b.get("text", "") for b in msg.get("content", [])
