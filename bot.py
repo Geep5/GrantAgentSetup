@@ -15,7 +15,20 @@ state/next_run before ending.
 Battle-tested fixes baked in (do not regress these):
 - _extract_text collects ALL assistant text of a turn, not just the last
   message (long tool-using turns end with a terse sign-off; the substantive
-  answer lives in intermediate messages).
+  answer lives in intermediate messages). Its turn boundary is a
+  bridge-formatted user message ("[Discord message from" / "[System]") —
+  omp-injected user-role entries (rule interrupts, summaries) must NOT
+  truncate the walk.
+- One prompt can produce SEVERAL agent_start/agent_end cycles (omp's rule
+  engine and todo reminders interrupt/restart the agent mid-turn), and each
+  agent_end may carry only its own slice of messages. _wait_for_response
+  waits for quiescence and _merge_turn_texts stitches every cycle's text —
+  returning at the first agent_end posts a fragment and orphans the answer.
+- A wait period (state/next_run) only schedules the auto-ping — it never
+  means "stop listening". The cron gate wakes early when a human posted
+  after the bot's last message, and the kickoff watermark starts at the
+  bot's own last post so messages sent while asleep are steered in, not
+  skipped.
 - Attachments are downloaded and images injected inline via omp's @file
   syntax; attachment-only messages count as real messages.
 - Message steering mid-turn; stale-event draining; fatal-kickoff backoff.

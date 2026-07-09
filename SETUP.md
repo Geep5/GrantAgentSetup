@@ -119,9 +119,26 @@ close-out. Due Send-Date items override next_run.
   with `--continue` + fresh prompt on the next message. **bot.py edits need a
   full process restart** (kill the pid in `state/lock`, rm the lock, run
   start.sh; the session resumes).
-- **Never regress `_extract_text`** — it must return ALL assistant text of
-  the turn. The "only last message" version silently eats the agent's answers
-  and makes it look insane ("see the link above" with no link above).
+- **Never regress the answer-extraction pipeline** — this broke four
+  different ways before it stuck, and every regression looks the same from
+  the outside: the bot posts a terse sign-off ("Parked", "see the link
+  above" with no link) while its real answer sits unposted in the session
+  file. The invariants: (1) `_extract_text` returns ALL assistant text of
+  the turn, not just the last message; (2) its turn boundary is a
+  bridge-formatted user message (`[Discord message from` / `[System]`) —
+  omp injects other user-role entries (rule interrupts, summaries) that
+  must not cut the walk short; (3) one prompt can produce SEVERAL
+  agent_start/agent_end cycles (omp's rule engine and todo reminders
+  restart the agent mid-turn) and each agent_end may carry only its own
+  message slice — `_wait_for_response` must wait for quiescence and
+  `_merge_turn_texts` must stitch every cycle's text. If the symptom ever
+  returns, diff the channel posts against the session `.jsonl` first.
+- **A wait period is not deafness.** `state/next_run` only schedules the
+  auto-ping. The cron gate wakes early when a human posted after the bot's
+  last message (`unseen_human_messages`), and the kickoff watermark starts
+  at the bot's own last post so anything sent while no session was running
+  is steered into the kickoff turn instead of silently skipped. Worst-case
+  reply latency during a wait = one cron interval.
 - Restrictive prompt language over-generalizes: every "never do X" needs a
   "this does NOT restrict Y" or the model over-complies (see Bias to action).
 - Peer-bot bridges: agents answering can take minutes; on timeout NEVER
