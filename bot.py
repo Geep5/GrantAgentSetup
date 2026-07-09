@@ -454,34 +454,34 @@ class OmpAgent:
                 bg.join(timeout=2)
 
     def _wait_for_response(self) -> str:
-        """Wait for the turn to FULLY finish and return its text.
+        """Wait for the turn to FULLY finish and return ALL of its text.
 
-        One prompt does not always mean one agent_end: omp's rule engine can
-        interrupt and restart the agent mid-turn (ttsr injections), producing
-        several agent_start/agent_end cycles per prompt. Returning at the
-        first agent_end posts a fragment and orphans the rest. So: after an
-        agent_end, linger briefly; if the agent starts again, keep waiting,
-        and return only the final agent_end's extraction."""
+        One prompt does not always mean one agent_end: omp's rule engine and
+        todo reminders can interrupt/restart the agent mid-turn, producing
+        several agent_start/agent_end cycles per prompt — and each cycle's
+        agent_end may carry only ITS OWN slice of messages. So: extract text
+        from EVERY agent_end, keep waiting while the agent keeps cycling
+        (linger QUIET_SECS after each end), and merge the pieces at the end."""
         QUIET_SECS = 6.0
         deadline = time.time() + AGENT_TIMEOUT
         agent_started = False
-        last_end = None
+        texts: list[str] = []
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
-                if last_end is not None:
-                    return self._extract_text(last_end) or "[No response from agent]"
+                if texts:
+                    return self._merge_turn_texts(texts) or "[No response from agent]"
                 return "[Agent timed out - the task may still be running]"
-            timeout = min(remaining, QUIET_SECS if last_end is not None else 30)
+            timeout = min(remaining, QUIET_SECS if texts else 30)
             try:
                 ev = self.event_queue.get(timeout=timeout)
             except queue.Empty:
-                if last_end is not None:  # quiet after an agent_end: turn is done
-                    return self._extract_text(last_end) or "[No response from agent]"
+                if texts:  # quiet after an agent_end: turn is done
+                    return self._merge_turn_texts(texts) or "[No response from agent]"
                 continue
             if ev is None:
-                if last_end is not None:
-                    return self._extract_text(last_end) or "[No response from agent]"
+                if texts:
+                    return self._merge_turn_texts(texts) or "[No response from agent]"
                 return "[Agent process crashed - will resume next session]"
             try:
                 data = json.loads(ev)
@@ -495,11 +495,31 @@ class OmpAgent:
                 log.info("omp %s: %s", "start" if ev_type.endswith("start") else "done", tool)
             if ev_type == "response" and not data.get("success"):
                 error = data.get("error", "unknown error")
-                if not agent_started and last_end is None:
+                if not agent_started and not texts:
                     return f"[Agent error: {error}]"
                 log.warning("Steer error (continuing): %s", error)
             if ev_type == "agent_end":
-                last_end = data
+                texts.append(self._extract_text(data))
+
+    @staticmethod
+    def _merge_turn_texts(texts: list[str]) -> str:
+        """Merge per-cycle extractions into one turn: a later piece that
+        contains what we have replaces it (full-history agent_end); a piece
+        already inside what we have is dropped; anything else is new text."""
+        final = ""
+        for t in texts:
+            t = (t or "").strip()
+            if not t:
+                continue
+            if final and final in t:
+                final = t          # superset — later end carried full history
+            elif t in final:
+                continue           # duplicate slice
+            elif final:
+                final = final + "\n\n" + t
+            else:
+                final = t
+        return final
 
     @staticmethod
     def _extract_text(agent_end_event: dict) -> str:
