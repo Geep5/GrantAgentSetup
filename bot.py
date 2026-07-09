@@ -171,6 +171,25 @@ def sync_crony_sends(pending: list[dict]):
 # Startup gates — safe to run every few minutes from cron
 # ---------------------------------------------------------------------------
 
+def unseen_human_messages() -> bool:
+    """True if a human posted after the bot's last message — someone is
+    talking to a sleeping bot. A wait period only schedules the auto-ping;
+    it never means "stop listening"."""
+    try:
+        me = get_bot_user_id()
+        recent = get_messages(CHANNEL_ID, limit=25)
+    except Exception as e:
+        log.warning("Unseen-message check failed (continuing): %s", e)
+        return False
+    for m in sorted(recent, key=lambda m: m["id"], reverse=True):
+        if m["author"]["id"] == me:
+            return False  # we spoke last — nothing pending
+        if not m["author"].get("bot") and (
+                m.get("content", "").strip() or m.get("attachments")):
+            return True
+    return False
+
+
 def gate_or_exit() -> list[dict]:
     os.makedirs(STATE_DIR, exist_ok=True)
 
@@ -199,7 +218,9 @@ def gate_or_exit() -> list[dict]:
             next_run = open(NEXT_RUN_FILE).read().strip()
             due = datetime.fromisoformat(next_run.replace("Z", "+00:00"))
             if datetime.now(timezone.utc) < due:
-                sys.exit(0)  # not yet — quietly stand down
+                if not unseen_human_messages():
+                    sys.exit(0)  # not yet — quietly stand down
+                log.info("Waking early — new message arrived during the wait")
         except FileNotFoundError:
             pass  # no next_run recorded → a session is due
         except ValueError as e:
@@ -570,13 +591,28 @@ def main():
         channel_id = CHANNEL_ID
         log.info("Channel: %s", channel_id)
 
-        initial = get_messages(channel_id, limit=1)
-        watermark = initial[0]["id"] if initial else "0"
+        initial = get_messages(channel_id, limit=25)
+        # Watermark starts at OUR last post, not the channel's newest message:
+        # anything a human sent while no session was running is then steered
+        # into the kickoff turn instead of being silently skipped.
+        bot_msgs = [m["id"] for m in initial if m["author"]["id"] == bot_user_id]
+        if bot_msgs:
+            watermark = max(bot_msgs)
+        else:
+            watermark = initial[0]["id"] if initial else "0"
+        unseen = [m for m in initial
+                  if m["id"] > watermark and m["author"]["id"] != bot_user_id
+                  and (m.get("content", "").strip() or m.get("attachments"))]
 
         agent = OmpAgent()
         agent.start()
 
         kickoff = RESUME_PROMPT if resumed else KICKOFF_PROMPT
+        if unseen:
+            kickoff += (
+                f"\n[System] {len(unseen)} message(s) arrived while you were "
+                "asleep; they will be delivered to you right after this. Answer "
+                "them directly — skip the generic session greeting.")
         if due_sends:
             listing = "; ".join(
                 f'"{t["name"]}" (send date {t["due"].strftime("%b %-d %H:%M")})'
