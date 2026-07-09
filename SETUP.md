@@ -105,6 +105,11 @@ close-out. Due Send-Date items override next_run.
   `<bot cwd>/.agents/skills/` (omp walks up from its cwd), useful when a
   skill should reach some bots but not others. Gitignore `.agents/` if the
   bot cwd lives inside a project repo.
+- **gws (Google Workspace CLI)**: set
+  `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` in .env, auth with that env
+  var active, and read the Google OAuth entry in the lore below BEFORE
+  authing — publishing status and consent checkboxes both bite later if
+  skipped now. Verify Gmail specifically from a bare env.
 - **browseruse**: `pipx/npm` per its repo; symlink the venv binaries into
   `~/.local/bin` and keep that dir in .env PATH.
 - **Remotion**: scaffold a workspace (`npx create-video`), note its path in
@@ -147,6 +152,23 @@ close-out. Due Send-Date items override next_run.
   shells; prefer file-based credential backends where offered. For GitHub
   pushes specifically: put `GH_TOKEN=$(gh auth token)` in .env — the gh git
   credential helper honors it without touching the keychain.
+- **Google OAuth (gws) has two time bombs — defuse both at install time:**
+  1. An OAuth app left in **"Testing"** publishing status gets ALL its
+     refresh tokens expired by Google after **7 days** — the bot's Google
+     access dies weekly, on schedule. Fix once: Cloud Console → APIs &
+     Services → OAuth consent screen → **Publish app** (In production).
+     Unverified-app warnings on login are fine for a personal tool;
+     production refresh tokens don't expire.
+  2. Google's consent screen shows **per-scope checkboxes**, and a human
+     clicking through fast leaves some unchecked — the login "succeeds"
+     but the token is missing scopes. The symptom is a weird split (Drive
+     works, Gmail 403 "insufficient authentication scopes"), which looks
+     like a backend/keyring problem but isn't. When (re)authing, check
+     EVERY box. To diagnose scope splits: `gws auth status` shows the
+     *requested* scopes; what Google actually *granted* only shows up by
+     probing each service. Always run
+     `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file gws auth login` and verify
+     Gmail from a bare cron-like env before calling it done.
 - If a session wedges: kill pid in `state/lock`, `rm state/lock`, next tick
   resumes it. `rm -rf sessions/main` forces a fresh session (history lost).
 
