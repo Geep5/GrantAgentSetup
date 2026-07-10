@@ -590,8 +590,13 @@ KICKOFF_PROMPT = (
 
 RESUME_PROMPT = (
     "[System] The previous session was interrupted and has been resumed. "
-    "Re-read the task object to re-ground yourself, give a one-line 'back "
-    "online' note, and pick up exactly where things left off."
+    "IMPORTANT: anything you wrote after the human's last message may have "
+    "died with the interruption and NEVER reached Discord — do not assume "
+    "they saw your latest answer, recommendation, or question. Re-read the "
+    "tail of the conversation, and if your last substantive message came "
+    "after theirs, RESTATE it in full now (not a summary of it). Then "
+    "re-read the task object to re-ground yourself and pick up exactly "
+    "where things left off."
 )
 
 
