@@ -24,6 +24,13 @@ Battle-tested fixes baked in (do not regress these):
   agent_end may carry only its own slice of messages. _wait_for_response
   waits for quiescence and _merge_turn_texts stitches every cycle's text —
   returning at the first agent_end posts a fragment and orphans the answer.
+- THE LOAD-BEARING ONE: agent_end.messages is UNRELIABLE — sometimes the
+  whole run, sometimes ONLY the final message (proven by sandbox replay; a
+  38-minute turn's 16k-char analysis arrived as a 309-char sign-off). The
+  session .jsonl is the only complete record, so _collect_turn_text reads
+  everything appended since _session_snapshot() marked the file at
+  prompt-send; event-derived text is a fallback only. Never go back to
+  trusting agent_end for content.
 - A wait period (state/next_run) only schedules the auto-ping — it never
   means "stop listening". The cron gate wakes early when a human posted
   after the bot's last message, and the kickoff watermark starts at the
@@ -431,6 +438,7 @@ class OmpAgent:
                 except queue.Empty:
                     break
 
+            self._session_snapshot()
             self._send_rpc("prompt", text)
 
             typing_stop = threading.Event()
@@ -482,20 +490,27 @@ class OmpAgent:
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
-                if texts:
-                    return self._merge_turn_texts(texts) or "[No response from agent]"
+                done = self._collect_turn_text(self._merge_turn_texts(texts))
+                if done and texts:
+                    return done
+                if done:
+                    return done + "\n\n[Agent timed out mid-task - more may follow next session]"
                 return "[Agent timed out - the task may still be running]"
             timeout = min(remaining, QUIET_SECS if texts else 30)
             try:
                 ev = self.event_queue.get(timeout=timeout)
             except queue.Empty:
                 if texts:  # quiet after an agent_end: turn is done
-                    return self._merge_turn_texts(texts) or "[No response from agent]"
+                    return (self._collect_turn_text(self._merge_turn_texts(texts))
+                            or "[No response from agent]")
                 continue
             if ev is None:
+                done = self._collect_turn_text(self._merge_turn_texts(texts))
                 if texts:
-                    return self._merge_turn_texts(texts) or "[No response from agent]"
-                return "[Agent process crashed - will resume next session]"
+                    return done or "[No response from agent]"
+                # crashed mid-turn: deliver whatever the agent DID say
+                return ((done + "\n\n") if done else "") + \
+                    "[Agent process crashed - will resume next session]"
             try:
                 data = json.loads(ev)
             except json.JSONDecodeError:
@@ -513,6 +528,80 @@ class OmpAgent:
                 log.warning("Steer error (continuing): %s", error)
             if ev_type == "agent_end":
                 texts.append(self._extract_text(data))
+
+    def _latest_session_file(self):
+        try:
+            files = [os.path.join(SESSION_DIR, f) for f in os.listdir(SESSION_DIR)
+                     if f.endswith(".jsonl")]
+            return max(files, key=os.path.getmtime) if files else None
+        except FileNotFoundError:
+            return None
+
+    def _session_snapshot(self):
+        """Mark where the session file ends as a prompt goes out; the turn's
+        text is everything the agent appends after this point."""
+        f = self._latest_session_file()
+        self._turn_file = f
+        self._turn_offset = os.path.getsize(f) if f else 0
+
+    @staticmethod
+    def _entry_text(msg: dict) -> str:
+        c = msg.get("content")
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            return "\n".join(b.get("text", "") for b in c
+                             if isinstance(b, dict) and b.get("type") == "text"
+                             and b.get("text", "").strip())
+        return ""
+
+    def _collect_turn_text(self, event_text: str) -> str:
+        """The session .jsonl is the source of truth for what the agent said.
+
+        agent_end events carry an UNRELIABLE subset of the turn's messages
+        (sometimes the whole run, sometimes only the final message), so a
+        long turn's substantive answer can be missing from every event. Read
+        everything appended to the session file since the prompt went out;
+        fall back to the event-derived text only if the file yields nothing.
+        """
+        f = self._latest_session_file()
+        if f is None:
+            return event_text
+        offset = self._turn_offset if f == getattr(self, "_turn_file", None) else 0
+        tail = (event_text or "").strip()[-60:]
+        for attempt in range(3):
+            parts = []
+            try:
+                with open(f, "rb") as fh:
+                    fh.seek(offset)
+                    data = fh.read().decode("utf-8", errors="replace")
+            except OSError as e:
+                log.warning("Session-file read failed (%s) - using event text", e)
+                return event_text
+            for line in data.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # partial trailing line mid-flush
+                if e.get("type") != "message":
+                    continue
+                m = e.get("message", {})
+                if m.get("role") != "assistant":
+                    continue
+                t = self._entry_text(m).strip()
+                if t:
+                    parts.append(t)
+            text = "\n\n".join(parts)
+            # if omp hasn't flushed the final message yet, wait and re-read
+            if not tail or tail in text or attempt == 2:
+                if text:
+                    return text
+                break
+            time.sleep(1.5)
+        return event_text
 
     @staticmethod
     def _merge_turn_texts(texts: list[str]) -> str:
