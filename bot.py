@@ -90,6 +90,9 @@ CHANNEL_ID = os.environ["DISCORD_CHANNEL_ID"]
 OMP_MODEL = os.environ.get("OMP_MODEL", "opus")
 OMP_BIN = os.environ.get("OMP_BIN", os.path.expanduser("~/.local/bin/omp"))
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "3"))
+# Bot accounts allowed to wake/steer this bot like a human (e.g. the hub
+# coordinator relaying Grant's messages). Comma-separated user ids.
+WAKE_BOT_IDS = {i.strip() for i in os.environ.get("WAKE_BOT_IDS", "").split(",") if i.strip()}
 AGENT_TIMEOUT = float(os.environ.get("AGENT_TIMEOUT", "3000"))  # per prompt
 
 SYSTEM_PROMPT_PATH = os.path.join(SCRIPT_DIR, "SYSTEM_PROMPT.md")
@@ -204,7 +207,7 @@ def unseen_human_messages() -> bool:
     for m in sorted(recent, key=lambda m: m["id"], reverse=True):
         if m["author"]["id"] == me:
             return False  # we spoke last — nothing pending
-        if not m["author"].get("bot") and (
+        if (not m["author"].get("bot") or m["author"]["id"] in WAKE_BOT_IDS) and (
                 m.get("content", "").strip() or m.get("attachments")):
             return True
     return False
