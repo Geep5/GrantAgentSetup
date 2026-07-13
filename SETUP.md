@@ -14,8 +14,11 @@ every check here exists because skipping it cost a real debugging session.
 Collect (ask in ONE batched message, not a drip):
 
 1. **Agent identity**: display name, one-line role, project description.
-2. **Discord**: bot token (create an app at discord.com/developers if needed —
-   the bot needs no privileged intents; REST polling only), the channel ID for
+2. **Discord**: bot token (create an app at discord.com/developers if needed).
+   ⚠️ REQUIRED: enable **Message Content Intent** (app → Bot → Privileged
+   Gateway Intents) — without it, Discord returns EMPTY `content` for other
+   users' messages even over REST, and the bot silently ignores everything
+   (no error anywhere; messages just look blank). The channel ID for
    conversations (developer mode → right-click channel → Copy ID), and the
    server invite if the bot isn't in the guild yet
    (`https://discord.com/oauth2/authorize?client_id=<APP_ID>&scope=bot&permissions=117824`).
@@ -148,6 +151,10 @@ close-out. Due Send-Date items override next_run.
   "this does NOT restrict Y" or the model over-complies (see Bias to action).
 - Peer-bot bridges: agents answering can take minutes; on timeout NEVER
   re-ask (the question posted) — `--listen` re-attaches.
+- **A bot that never responds and never errors = missing Message Content
+  Intent.** Discord blanks `content` in REST responses for apps without the
+  intent (own messages and mentions excepted), so the bridge sees arrivals
+  but skips them as empty. Toggle it in the portal; effect is immediate.
 - macOS keychain-backed CLIs (gws, gh, etc.) can fail from cron/background
   shells; prefer file-based credential backends where offered. For GitHub
   pushes specifically: put `GH_TOKEN=$(gh auth token)` in .env — the gh git
