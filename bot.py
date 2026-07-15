@@ -108,7 +108,13 @@ ANYTYPE_API_KEY = os.environ.get("ANYTYPE_API_KEY", "")
 ANYTYPE_SPACE_ID = os.environ.get("ANYTYPE_SPACE_ID", "")
 ANYTYPE_BOARD_ID = os.environ.get("ANYTYPE_BOARD_ID", "")
 SEND_DATE_KEY = os.environ.get("SEND_DATE_KEY", "send_date")
-SENDS_ENABLED = bool(ANYTYPE_API_KEY and ANYTYPE_SPACE_ID and ANYTYPE_BOARD_ID)
+# Boards to watch for deferred sends. Either the single pair above, or
+# ANYTYPE_BOARDS="<space>:<board>,<space>:<board>" for multi-board bots.
+ANYTYPE_BOARDS = [tuple(p.split(":", 1)) for p in
+                  os.environ.get("ANYTYPE_BOARDS", "").split(",") if ":" in p]
+if not ANYTYPE_BOARDS and ANYTYPE_SPACE_ID and ANYTYPE_BOARD_ID:
+    ANYTYPE_BOARDS = [(ANYTYPE_SPACE_ID, ANYTYPE_BOARD_ID)]
+SENDS_ENABLED = bool(ANYTYPE_API_KEY and ANYTYPE_BOARDS)
 
 # Optional: mirror pending sends into a Crony dashboard file
 CRONY_TOML = os.environ.get("CRONY_TOML", "")
@@ -134,17 +140,19 @@ def fetch_pending_sends() -> list[dict]:
     """
     if not SENDS_ENABLED:
         return []
-    url = (f"http://localhost:31009/v1/spaces/{ANYTYPE_SPACE_ID}/lists/"
-           f"{ANYTYPE_BOARD_ID}/views/default/objects?limit=100")
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {ANYTYPE_API_KEY}",
-        "Anytype-Version": "2025-11-08",
-    })
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read())
+    rows = []
+    for space_id, board_id in ANYTYPE_BOARDS:
+        url = (f"http://localhost:31009/v1/spaces/{space_id}/lists/"
+               f"{board_id}/views/default/objects?limit=100")
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {ANYTYPE_API_KEY}",
+            "Anytype-Version": "2025-11-08",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            rows.extend(json.loads(resp.read()).get("data", []))
 
     pending = []
-    for obj in data.get("data", []):
+    for obj in rows:
         props = {p.get("key"): p for p in obj.get("properties", [])}
         if props.get("done", {}).get("checkbox"):
             continue  # board views don't always filter done — check ourselves
