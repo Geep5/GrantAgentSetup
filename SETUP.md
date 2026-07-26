@@ -26,7 +26,14 @@ Collect (ask in ONE batched message, not a drip):
    app key (Anytype → Settings → API keys, or reuse an existing MCP
    registration's bearer). If no Anytype: the bot still works, but loses the
    task board + deferred sends — confirm they want that.
-4. **omp**: is `omp` installed (`omp --version`)? Which model (default: opus)?
+4. **omp**: run `omp update` first, then `omp --version`. **Pin the EXACT model
+   id in .env — never a fuzzy alias.** Aliases silently resolve to older
+   models: `opus` still resolved to `claude-opus-4-8` long after Opus 5
+   shipped, so a whole fleet ran a generation behind while the config looked
+   correct. Run `omp models`, copy the exact id, and include the effort
+   suffix: `OMP_MODEL=claude-opus-5:xhigh`. Gotcha: a provider prefix and an
+   effort suffix together are rejected (`anthropic/claude-opus-5:xhigh`
+   fails) — use one or the other.
 5. **Optional extras**: peer bot channel? Crony dashboard file? Remotion?
    browseruse? presence daemon (bot shows online 24/7)?
 
@@ -127,6 +134,11 @@ close-out. Due Send-Date items override next_run.
   with `--continue` + fresh prompt on the next message. **bot.py edits need a
   full process restart** (kill the pid in `state/lock`, rm the lock, run
   start.sh; the session resumes).
+  **Caveat that has bitten twice: a hot-reload does NOT rewrite what a running
+  session already believes.** If a change invalidates something the agent has
+  been doing all session (a renamed type, a moved board, a new convention), it
+  can keep acting on the stale belief from its context. Do a full restart for
+  those, not just an omp-child kill.
 - **Never regress the answer-extraction pipeline** — this broke four
   different ways before it stuck, and every regression looks the same from
   the outside: the bot posts a terse sign-off ("Parked", "see the link
@@ -176,6 +188,22 @@ close-out. Due Send-Date items override next_run.
      probing each service. Always run
      `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file gws auth login` and verify
      Gmail from a bare cron-like env before calling it done.
+- **A bot can destroy its own .env — instruct append-only.** Two bots wiped
+  their `DISCORD_BOT_TOKEN` (and everything else) when told to "put the
+  secret in your graice/.env": they rewrote the file instead of appending,
+  and only failed to start at the next reboot. Any instruction that has an
+  agent touch a config it depends on must say: **append only, never rewrite
+  the file, never touch keys you didn't add.**
+- **Bot-to-bot coordination**: `WAKE_BOT_IDS` in .env lists bot account ids
+  that this bot should treat like a human — their posts wake it from a
+  gated sleep and steer a running session. Used so a hub/coordinator bot can
+  relay to workers. Without it, bots ignore all other bots by default.
+- **KPI reporting (optional)**: a bot can publish one metric by writing
+  `state/kpi.json` (`{metric, value, as_of, target?, total_all_time?}`) —
+  ideally from a `kpi.py` in its runtime dir that measures real production
+  data. Rule that matters: if it can't be measured, write NOTHING and exit
+  non-zero. A missing reading is honest; a fabricated one silently corrupts
+  every decision made from it.
 - If a session wedges: kill pid in `state/lock`, `rm state/lock`, next tick
   resumes it. `rm -rf sessions/main` forces a fresh session (history lost).
 
