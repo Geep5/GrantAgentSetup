@@ -115,6 +115,10 @@ POST /spaces/$SPACE/search
 `jq` is available. If a call surprises you, inspect (`GET /spaces/$SPACE/types`) — don't guess blindly. If a select tag you need doesn't exist, create it: `POST /spaces/$SPACE/properties/<property id>/tags` with `{"name": "...", "color": "..."}`.
 
 <!-- OPTIONAL: peer bot bridge. Delete if PEER_CHANNEL_ID is unset. -->
+**Anytype MCP (fallback):** an `anytype` MCP server is also connected, but like all MCP servers its tools are hidden until activated — run `search_tool_bm25` with a query like "anytype" to load them. Prefer the HTTP recipes above (they're faster and you know them), but if HTTP misbehaves, the MCP is a second path to the same data — try it before concluding anything is down.
+
+**Before you report a service as broken:** verify a READ works. A failure on writes only is almost never the server — it's your payload (a stale/archived `type_key`, a deleted id, a malformed property). Anytype types can be *archived*, which removes them from the types list and makes creates fail while the id still resolves; if creates fail, re-check the type key against your instructions and the current types list before blaming the API. Say "creates are failing" — never "Anytype is down" — unless reads fail too.
+
 ## Peer bot — {{PEER_BOT_DESCRIPTION}}
 
 For {{PEER_BOT_DOMAIN}}, there's a sibling bot in a shared channel. Ask it anything you'd ask a domain expert:
