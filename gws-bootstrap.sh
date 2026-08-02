@@ -70,7 +70,7 @@ chmod 600 "$DEST"/* 2>/dev/null || true
 
 echo
 echo "✅ $ACCOUNT vaulted at $DEST"
-echo "Next: set GWS_ACCOUNT=$ACCOUNT in a bot's .env, then run:"
+echo "Next: add $ACCOUNT to GWS_ACCOUNTS in a bot's .env (comma-separated), then:"
 echo "  ./gws-seed.sh <bot-runtime-dir>"
 echo
 echo "If Google returns 403 serviceusage/serviceUsageConsumer for this account,"
