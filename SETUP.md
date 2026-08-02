@@ -115,11 +115,23 @@ close-out. Due Send-Date items override next_run.
   `<bot cwd>/.agents/skills/` (omp walks up from its cwd), useful when a
   skill should reach some bots but not others. Gitignore `.agents/` if the
   bot cwd lives inside a project repo.
-- **gws (Google Workspace CLI)**: set
-  `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file` in .env, auth with that env
-  var active, and read the Google OAuth entry in the lore below BEFORE
-  authing — publishing status and consent checkboxes both bite later if
-  skipped now. Verify Gmail specifically from a bare env.
+- **gws (Google Workspace CLI)** — a bot may hold SEVERAL Google identities:
+  1. once per account, with a browser: `./gws-bootstrap.sh <account>` → vaults
+     it in `~/.config/gws-vault/<account>/`
+  2. list them in the bot's `.env`: `GWS_ACCOUNTS=a@x.com,b@x.com`
+  3. `./gws-seed.sh <bot-dir>` → private credential dir per account under
+     `<bot>/gws/<account>/`; instant, no browser, safe to re-run any time
+  The agent then runs `./gws-as <account> <gws args>` (never bare `gws`) and
+  reads the `gws-accounts` skill for the rules. Three things make this
+  mandatory rather than tidy: the default OS keychain **cannot be unlocked from
+  cron**, gws **DELETES the credentials file** when it fails to decrypt (so one
+  shared dir means one bot's bad day destroys auth for the whole fleet), and a
+  single config dir can only ever hold one account. Each account also needs
+  `serviceusage.serviceUsageConsumer` on the OAuth client's GCP project — that
+  403 recurs for every new account. Note gws has no service-account or
+  domain-wide-delegation path (the vendored yup-oauth2 crate supports them; the
+  CLI exposes no way in), so per-user OAuth is the only option today; DWD would
+  be the right upgrade past a handful of accounts.
 - **browseruse**: `pipx/npm` per its repo; symlink the venv binaries into
   `~/.local/bin` and keep that dir in .env PATH.
 - **Remotion**: scaffold a workspace (`npx create-video`), note its path in
@@ -188,6 +200,13 @@ close-out. Due Send-Date items override next_run.
      probing each service. Always run
      `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file gws auth login` and verify
      Gmail from a bare cron-like env before calling it done.
+- **An agent on the WRONG Google identity is worse than one that can't start.**
+  A single shared `~/.config/gws` holds exactly one account, so authorizing a
+  second account silently repoints every bot at it — drafts land in the wrong
+  mailbox and nothing looks broken. (Found live: the whole fleet was quietly
+  acting as a different person than its prompts claimed.) Hence one credential
+  dir per bot per account, and a boot preflight that asserts the live identity
+  matches before any work. `state/gws_status` records the verdict.
 - **A bot can destroy its own .env — instruct append-only.** Two bots wiped
   their `DISCORD_BOT_TOKEN` (and everything else) when told to "put the
   secret in your graice/.env": they rewrote the file instead of appending,

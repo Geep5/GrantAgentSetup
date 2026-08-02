@@ -1,0 +1,28 @@
+#!/bin/sh
+# gws-as <account> <gws args...> — run gws AS a specific Google account.
+#
+# Each account has its own credential dir under <bot>/gws/<account>/, so the
+# accounts cannot interfere with each other: gws deletes the credentials file
+# when it fails to decrypt, and a shared dir would let one bad account destroy
+# the others. The file keyring is mandatory — cron cannot unlock the OS keychain.
+#
+#   ./gws-as support@matcherino.com gmail users getProfile --params '{"userId":"me"}'
+#   ./gws-as mark@matcherino.com drive files list
+
+set -e
+ACCOUNT="$1"
+[ -z "$ACCOUNT" ] && { echo "usage: gws-as <account> <gws args...>" >&2; exit 2; }
+shift
+
+BOT="$(cd "$(dirname "$0")" && pwd)"
+DIR="$BOT/gws/$ACCOUNT"
+if [ ! -d "$DIR" ]; then
+  echo "gws-as: '$ACCOUNT' is not set up for this bot." >&2
+  echo "Available: $(ls "$BOT/gws" 2>/dev/null | tr '\n' ' ')" >&2
+  echo "To add it: ./gws-seed.sh (after Grant runs gws-bootstrap.sh $ACCOUNT)" >&2
+  exit 2
+fi
+
+export GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$DIR"
+export GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file
+exec gws "$@"
