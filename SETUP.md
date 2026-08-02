@@ -121,8 +121,11 @@ close-out. Due Send-Date items override next_run.
   2. list them in the bot's `.env`: `GWS_ACCOUNTS=a@x.com,b@x.com`
   3. `./gws-seed.sh <bot-dir>` → private credential dir per account under
      `<bot>/gws/<account>/`; instant, no browser, safe to re-run any time
-  The agent then runs `./gws-as <account> <gws args>` (never bare `gws`) and
-  reads the `gws-accounts` skill for the rules. Three things make this
+  4. wire the skill so the agent knows the rules:
+     `mkdir -p <bot>/.agents/skills && ln -s <this-repo>/skills/gws-accounts <bot>/.agents/skills/gws-accounts`
+     and keep the Google Workspace section of the prompt template.
+  The agent then runs `./gws-as <account> <gws args>` (never bare `gws`).
+  **Full model, failure modes and bootstrap details: see GWS.md.** Three things make this
   mandatory rather than tidy: the default OS keychain **cannot be unlocked from
   cron**, gws **DELETES the credentials file** when it fails to decrypt (so one
   shared dir means one bot's bad day destroys auth for the whole fleet), and a

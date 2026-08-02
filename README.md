@@ -9,6 +9,8 @@ and speaks in complete turns.
 
 This repo is the **blueprint**: nothing machine- or project-specific lives in
 code. An installing agent (Claude Code, omp, etc.) reads **SETUP.md**,
+
+- **GWS.md** — Google Workspace auth for a fleet: one credential universe per account, why the OS keychain and shared config dirs break under cron, and the identity preflight that stops an agent acting as the wrong person.
 interviews you, fills in `.env` + `SYSTEM_PROMPT.md` from the templates, and
 verifies each layer.
 
