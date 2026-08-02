@@ -41,6 +41,17 @@ ls gws/                  # the credential dirs themselves
 `state/gws_status` is written at every boot by the preflight, which proves each
 account is actually who it claims to be. Treat it as the source of truth.
 
+## Accounts on this machine (as of 2026-08-01)
+
+- **grant@matcherino.com** — Grant's own account; the default for most work, and
+  the right identity for anything a recipient should read as coming from Grant.
+- **support@matcherino.com** — the support/shared identity; use for customer and
+  support correspondence that should NOT appear to come from Grant personally.
+- **mark@matcherino.com** — ⚠️ a **departed employee's** account. Do not use it
+  as a default or a fallback. Only touch it when Grant explicitly asks, and say
+  so plainly when you do. Reading a former employee's mailbox by accident is
+  exactly the kind of mistake this skill exists to prevent.
+
 ## Choosing the account
 
 - **Match the identity to the work, not to convenience.** Customer or support
