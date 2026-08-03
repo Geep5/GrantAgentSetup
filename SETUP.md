@@ -203,6 +203,14 @@ close-out. Due Send-Date items override next_run.
      probing each service. Always run
      `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file gws auth login` and verify
      Gmail from a bare cron-like env before calling it done.
+- **Re-authing omp does NOT fix a running bot** — restart it. A bot's omp child
+  holds its credentials from the moment it was spawned. If `/login` is re-run
+  (or the omp binary self-updates) while bots are alive, those children keep
+  failing with `[Agent error: No API key found for anthropic ... create
+  ~/.omp/agent/agent.db]` even though omp works perfectly from your shell.
+  Diagnose it in one step: spawn omp the way bot.py does — same cwd, same .env,
+  `--mode rpc` — and if that succeeds, the credentials are fine and the running
+  children are simply stale. Kill the omp child AND the bot pid, then restart.
 - **An agent on the WRONG Google identity is worse than one that can't start.**
   A single shared `~/.config/gws` holds exactly one account, so authorizing a
   second account silently repoints every bot at it — drafts land in the wrong
