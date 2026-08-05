@@ -46,6 +46,34 @@ said — that is the point of the whole thing.
 Default to 60 minutes unless Grant says otherwise. The recorder leaves on its
 own when the call ends, so a generous limit costs nothing.
 
+### Never join twice
+
+Once `start-recording.sh` returns a job, **you are already in the room.** Do not
+also open a browser to "check", "verify", or "watch" — that puts a SECOND
+participant in the call under a different name, and a browser on Grant's
+machine plays meeting audio through his speakers, which is an echo loop when
+he's in the same call. If you want to know what's happening, read the log via
+`recording-status.sh`, not a browser.
+
+The recorder has its own persistent login as graice@matcherino.com. **Never ask
+Grant to sign a Chrome profile in for a meeting** — if a browser looks signed
+out, that is irrelevant to recording, and asking him to fix it is a dead end.
+
+### Live transcript, during the call
+
+```bash
+/Users/sharky/projekt/2/Recorder/live-transcribe.sh <container> &
+```
+
+The container name comes from `recording-status.sh` (e.g. `rec-30392`). Text
+lands in `out/live-<id>/live.txt` and grows about once a minute — read that
+file to answer "what are they saying right now". It runs a second audio tap and
+does not disturb the recording.
+
+Roughly a minute behind live, because whisper needs a closed chunk to work on.
+Say that rather than implying it is instant. The in-progress mp4 itself is
+unreadable until the call ends, so `live.txt` is the only live source.
+
 **Say what you did**: "recording as Graice Matcherino, job rec-…". Grant cannot
 see a container, so if you don't say it, he has no way to know it worked.
 
