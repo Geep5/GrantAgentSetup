@@ -41,16 +41,53 @@ ls gws/                  # the credential dirs themselves
 `state/gws_status` is written at every boot by the preflight, which proves each
 account is actually who it claims to be. Treat it as the source of truth.
 
-## Accounts on this machine (as of 2026-08-01)
+## The four identities
 
-- **grant@matcherino.com** — Grant's own account; the default for most work, and
-  the right identity for anything a recipient should read as coming from Grant.
-- **support@matcherino.com** — the support/shared identity; use for customer and
+Each is a separate login with its own credential dir. Adding or repairing one
+never touches the others.
+
+- **grant@matcherino.com** — Grant himself. The default for most work, and the
+  right identity for anything a recipient should read as coming from Grant.
+- **graice@matcherino.com** — the bot's OWN identity. Use this when the work is
+  the bot's, not a person's: joining and recording meetings, calendar holds it
+  books for itself, files it generates. This is the account that appears in a
+  Meet room as "Graice Matcherino". Prefer it over borrowing a human's account.
+- **support@matcherino.com** — the shared support identity, for customer and
   support correspondence that should NOT appear to come from Grant personally.
-- **mark@matcherino.com** — ⚠️ a **departed employee's** account. Do not use it
-  as a default or a fallback. Only touch it when Grant explicitly asks, and say
-  so plainly when you do. Reading a former employee's mailbox by accident is
-  exactly the kind of mistake this skill exists to prevent.
+- **mark@matcherino.com** — ⚠️ a **departed employee's** account. Never a
+  default and never a fallback. Only when Grant explicitly asks, and say plainly
+  that you are doing it. Reading a former employee's mailbox by accident is
+  exactly what this skill exists to prevent.
+
+## Adding or repairing an account
+
+The login needs a browser and Grant's own hands — **you cannot do it, and you
+must not ask him for a password.** Give him the command and let him run it:
+
+```bash
+cd <bot dir> && ./gws-bootstrap.sh <account@matcherino.com>
+```
+
+Then, to hand the new credentials to the bots:
+
+```bash
+./gws-seed.sh
+```
+
+Two failure modes worth knowing, because both lie about what is wrong:
+
+- A re-login **REPLACES** the scope set rather than adding to it. If he re-runs
+  bootstrap with `--scopes`, the list must include everything already needed or
+  previously-working calls start failing with "insufficient authentication
+  scopes".
+- A plaintext `credentials.json` **shadows** an encrypted `credentials.enc`, so
+  a stale plaintext file silently makes gws act as the OLD identity. Bootstrap
+  clears this itself; if you ever see the wrong identity reported, look there
+  first.
+
+If `state/gws_status` shows `FAILED <account>`, that account is simply
+unavailable. Say so and carry on with the rest — do not silently fall back to a
+different identity, which is how work goes out as the wrong person.
 
 ## Choosing the account
 
