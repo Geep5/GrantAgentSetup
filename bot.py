@@ -879,24 +879,6 @@ def post_response(channel_id: str, response: str) -> bool:
     global _MEETING_PENDING
     if _MEETING_PENDING and text:
         _MEETING_PENDING = False
-# The same utterance can reach us twice: once as a raw transcript line before
-# the turn detector has written its inbox, then again as the detector's cleaned
-# version. Two deliveries means two answers, spoken over each other.
-_MEETING_SAID = []
-
-
-def _already_delivered(line: str) -> bool:
-    """True if we have effectively seen this utterance already."""
-    words = re.sub(r"[^a-z0-9 ]", "", line.lower()).split()
-    key = " ".join(w for w in words if w not in ("grace", "gracie", "graice", "greis"))
-    if not key:
-        return True
-    for prev in _MEETING_SAID[-12:]:
-        # one is usually a substring of the other: raw fragment vs stitched
-        if key in prev or prev in key:
-            return True
-    _MEETING_SAID.append(key)
-    return False
         meeting = meeting_now()
         if meeting and meeting.get("voice"):
             speak_in_meeting(meeting["container"], text)
