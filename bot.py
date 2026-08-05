@@ -772,11 +772,27 @@ def meeting_now():
 
 
 def unseen_meeting_lines(meeting):
-    """New transcript lines that address this bot by name."""
-    live = os.path.join(meeting["dir"], "live.txt")
-    mark_path = os.path.join(meeting["dir"], ".bot-mark")
+    """Complete messages addressed to this bot, from the turn detector.
+
+    NOT raw transcript lines. Speech arrives fragmented — "Graice, can you hear
+    me?" / "If yes." / "Say woof" is three lines of one thought — and a bot fed
+    those answers three times, talking over the speaker. turn-detect.py decides
+    when a request has actually finished and hands over one cleaned sentence.
+
+    Falls back to name-matching raw lines when the detector isn't running:
+    worse, but better than going deaf.
+    """
+    inbox = os.path.join(meeting["dir"], "inbox.jsonl")
+    use_inbox = os.path.exists(inbox)
+    source = inbox if use_inbox else os.path.join(meeting["dir"], "live.txt")
+    # The mark is a LINE COUNT, so it only means anything for the file it came
+    # from. The detector starts a moment after the recorder, so the source
+    # switches from live.txt to inbox.jsonl mid-call — and a mark of 17 raw
+    # lines then swallowed every entry of a 2-line inbox, silently.
+    mark_path = os.path.join(meeting["dir"],
+                             ".bot-mark-inbox" if use_inbox else ".bot-mark")
     try:
-        with open(live) as fh:
+        with open(source) as fh:
             lines = fh.read().splitlines()
     except OSError:
         return []
@@ -789,7 +805,17 @@ def unseen_meeting_lines(meeting):
     if fresh:
         with open(mark_path, "w") as fh:
             fh.write(str(len(lines)))
-    return [ln for ln in fresh if WAKE_RE.search(ln)]
+    if not use_inbox:
+        return [ln for ln in fresh if WAKE_RE.search(ln)]
+    out = []
+    for ln in fresh:
+        try:
+            row = json.loads(ln)
+        except ValueError:
+            continue
+        if row.get("text"):
+            out.append(f"[{row.get('ts','')}] {row['text']}")
+    return out
 
 
 def speak_in_meeting(container: str, text: str) -> None:
