@@ -17,7 +17,41 @@ product (the Meet **Media API**, developer preview, requires allowlisting) —
 until that's approved, treat "listen" as either (a) sitting in the room as a
 visible participant, or (b) reading the transcript afterwards.
 
-## Join a meeting — HEADLESS by default
+## Recording a meeting — the normal case
+
+**Use the Recorder, not a browser on Grant's machine.** It joins as
+**graice@matcherino.com** from inside a container whose screen and speakers
+exist only in that container: nothing appears on Grant's display, nothing plays
+through his speakers, and he can sit in the same call with no echo. It records
+video + audio and transcribes locally (whisper.cpp, no API).
+
+```bash
+/Users/sharky/projekt/2/Recorder/start-recording.sh <meeting-url> [minutes]
+```
+
+This returns IMMEDIATELY with a job id — it does NOT block for the length of
+the meeting. Never run `record-meeting.sh` directly from a conversation; it
+blocks until the call ends and would freeze your session for an hour.
+
+Then report the job to Grant and carry on. To check later:
+
+```bash
+/Users/sharky/projekt/2/Recorder/recording-status.sh [job]
+```
+
+When it finishes, `out/meeting-<stamp>.mp4` and `out/meeting-<stamp>.txt`
+(the transcript) exist. Read the transcript to answer questions about what was
+said — that is the point of the whole thing.
+
+Default to 60 minutes unless Grant says otherwise. The recorder leaves on its
+own when the call ends, so a generous limit costs nothing.
+
+**Say what you did**: "recording as Graice Matcherino, job rec-…". Grant cannot
+see a container, so if you don't say it, he has no way to know it worked.
+
+## Joining visibly (only when Grant asks to watch)
+
+The browser path below runs on Grant's own machine as whichever Chrome profile you pick. It is the fallback, not the default.
 
 Omit `--headed`. Headless is not a fallback, it is the right mode: no window
 opens on Grant's screen, and headless Chrome reports **no microphone and no
