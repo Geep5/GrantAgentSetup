@@ -99,6 +99,77 @@ out, that is irrelevant to recording, and asking him to fix it is a dead end.
 
 ### Live transcript, during the call
 
+It starts **automatically** with every recording — you never set it up. Text
+lands in `out/live-<container>/live.txt`, roughly **two seconds** behind the
+speaker, one line per utterance with a timestamp:
+
+```
+[23:47:29] Revenue is up 11% this quarter.
+```
+
+Read that file to answer "what are they saying right now". The container name
+comes from `recording-status.sh`.
+
+It cuts on silence rather than on a timer, so lines appear when someone stops
+talking. A long monologue flushes every 25s.
+
+If Grant needs the audio to stay on his machine, run with `ASR=local` — same
+path, whisper.cpp instead of OpenAI, marginally faster and nothing uploaded.
+The default sends each utterance to OpenAI.
+
+### Talking in the call — OFF by default, and that is deliberate
+
+**Do not use `--voice` unless Grant asks for it in that conversation.** The
+normal job is to join, listen like any other participant, and record the
+screen. Grant weighed the round-trip delay against the value and chose silence:
+you answer in Discord, where there is no latency problem, not out loud.
+
+Add `--voice` only when he explicitly asks you to speak in a call:
+
+```bash
+/Users/sharky/projekt/2/Recorder/start-recording.sh --voice <meeting-url> [minutes]
+/Users/sharky/projekt/2/Recorder/speak.sh <container> "what you want to say"
+```
+
+`--voice` gives the browser a real microphone (a virtual one — the room hears
+only what `speak.sh` plays into it, so you are still silent by default). Without
+it there is no mic at all and `speak.sh` will refuse.
+
+To sit in a call and answer when addressed:
+
+```bash
+/Users/sharky/projekt/2/Recorder/meet-listen.sh out/live-<id> --wait 120
+```
+
+It blocks until someone says your name (whisper mangles it — Gracie, Grace —
+so it matches loosely), prints what they said, and exits. Loop it: listen →
+think → `speak.sh` → listen again. Between calls you are still on Discord.
+
+**Latency is real: ~20-35s** from someone finishing a sentence to you replying.
+Say so rather than letting Grant think you are quick. Consequences:
+
+- **Never interject.** Only speak when addressed by name. By the time you have
+  something to say the topic has moved, and talking over people is worse than
+  silence.
+- Keep spoken replies to a sentence or two. Long answers arrive stale.
+- If asked something you cannot answer fast, say a short "let me check" out
+  loud and put the real answer in Discord.
+
+### Never join twice
+
+Once `start-recording.sh` returns a job, **you are already in the room.** Do not
+also open a browser to "check", "verify", or "watch" — that puts a SECOND
+participant in the call under a different name, and a browser on Grant's
+machine plays meeting audio through his speakers, which is an echo loop when
+he's in the same call. If you want to know what's happening, read the log via
+`recording-status.sh`, not a browser.
+
+The recorder has its own persistent login as graice@matcherino.com. **Never ask
+Grant to sign a Chrome profile in for a meeting** — if a browser looks signed
+out, that is irrelevant to recording, and asking him to fix it is a dead end.
+
+### Live transcript, during the call
+
 ```bash
 /Users/sharky/projekt/2/Recorder/live-transcribe.sh <container> &
 ```
