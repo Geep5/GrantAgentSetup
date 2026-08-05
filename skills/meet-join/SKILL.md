@@ -113,9 +113,10 @@ comes from `recording-status.sh`.
 It cuts on silence rather than on a timer, so lines appear when someone stops
 talking. A long monologue flushes every 25s.
 
-If Grant needs the audio to stay on his machine, run with `ASR=local` — same
-path, whisper.cpp instead of OpenAI, marginally faster and nothing uploaded.
-The default sends each utterance to OpenAI.
+Runs locally by default (whisper.cpp on Metal) — free, and the audio never
+leaves the machine. If a call has hard audio (several speakers, accents, bad
+mics) and the transcript is visibly dropping words, rerun with `ASR=openai`,
+which is more accurate but uploads each utterance.
 
 ### Talking in the call — OFF by default, and that is deliberate
 
