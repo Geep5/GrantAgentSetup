@@ -243,19 +243,12 @@ def gate_or_exit() -> list[dict]:
     except Exception as e:
         log.warning("Pending-send check failed (continuing): %s", e)
 
-    # Gate 2: is it time yet?
-    if not due_sends:
-        try:
-            next_run = open(NEXT_RUN_FILE).read().strip()
-            due = datetime.fromisoformat(next_run.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) < due:
-                if not unseen_human_messages():
-                    sys.exit(0)  # not yet — quietly stand down
-                log.info("Waking early — new message arrived during the wait")
-        except FileNotFoundError:
-            pass  # no next_run recorded → a session is due
-        except ValueError as e:
-            log.warning("Unparseable next_run (%s) — treating session as due", e)
+    # There is no "not yet". A bot that schedules itself for later is a bot
+    # that ignores Grant in the meantime — he asks a question, nothing answers,
+    # and nothing tells him why. Availability beats tidiness: if no session is
+    # running, start one.
+    if os.path.exists(NEXT_RUN_FILE):
+        os.remove(NEXT_RUN_FILE)   # legacy sleep marker; never honoured again
 
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
@@ -836,6 +829,26 @@ def speak_in_meeting(container: str, text: str) -> None:
         log.error("Failed to speak in meeting: %s", e)
 
 
+
+def restart_session(agent, channel_id: str, bot_user_id: str):
+    """Wrap up the current session and immediately open a fresh one.
+
+    [SESSION_END] used to mean "exit and wait for cron", which left the bot
+    unreachable for up to ten minutes — and, if it had written a next_run,
+    for hours. Ending a session is only about refreshing context; it should
+    never cost availability. Archive, restart, keep listening.
+    """
+    log.info("Session complete — starting a fresh one, staying reachable")
+    try:
+        agent.stop()
+    except Exception:
+        pass
+    archive_session()
+    fresh = OmpAgent()
+    fresh.start()
+    return fresh
+
+
 def post_response(channel_id: str, response: str) -> bool:
     """Post agent text to Discord. Returns True if the session should end."""
     ended = SESSION_END_MARKER in response
@@ -905,14 +918,12 @@ def main():
         # recover mid-session: tell the user once, back off, let a later fire retry.
         if response.startswith(("[Agent error:", "[Agent process crashed")):
             log.error("Fatal kickoff failure: %s", response[:200])
-            from datetime import timedelta
-            retry_at = datetime.now(timezone.utc) + timedelta(hours=2)
-            with open(NEXT_RUN_FILE, "w") as f:
-                f.write(retry_at.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            # No long backoff. A two-hour sleep after a transient API blip left
+            # Grant talking to a bot that was never going to answer. Cron fires
+            # again within ten minutes; that is the retry.
             send_message(channel_id,
-                         f"⚠️ I couldn't start my brain: {response[:500]}\n"
-                         f"I'll retry in ~2h. To retry sooner once it's fixed: "
-                         f"delete state/next_run in my folder (I fire within 10 min).")
+                         f"⚠️ Couldn't start: {response[:400]}\n"
+                         f"Retrying shortly — say anything and I'll pick it up.")
             agent.stop()
             shutil.rmtree(SESSION_DIR, ignore_errors=True)  # retry fresh, not resumed
             return
@@ -946,10 +957,8 @@ def main():
                         log.error("Agent error (meeting): %s", e)
                         continue
                     if post_response(channel_id, response):
-                        log.info("Session complete")
-                        agent.stop()
-                        archive_session()
-                        return
+                        agent = restart_session(agent, channel_id, bot_user_id)
+                        continue
 
             try:
                 messages = get_messages(channel_id, limit=10, after=watermark)
@@ -973,10 +982,8 @@ def main():
                     log.error("Agent error: %s", e)
                     response = f"[Bot error: {e}]"
                 if post_response(channel_id, response):
-                    log.info("Session complete")
-                    agent.stop()
-                    archive_session()
-                    return
+                    agent = restart_session(agent, channel_id, bot_user_id)
+                    continue
     finally:
         release_lock()
 
