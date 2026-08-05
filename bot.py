@@ -732,6 +732,7 @@ def archive_session():
 
 RECORDER_DIR = os.environ.get("RECORDER_DIR", "/Users/sharky/projekt/2/Recorder")
 MEETING_STATE = os.path.join(SCRIPT_DIR, "state", "meeting.json")
+_MEETING_BACKOFF = 0.0
 # Whisper mangles names constantly — Graice becomes Grace, Gracie, Greis.
 WAKE_RE = re.compile(os.environ.get("MEETING_WAKE", r"grac|grais|greis|graice"), re.I)
 
@@ -743,10 +744,18 @@ def meeting_now():
             m = json.load(fh)
     except Exception:
         return None
+    # This runs every few seconds inside the message loop, so a wedged Docker
+    # daemon must never become the bot's problem: short timeout, and back off
+    # instead of retrying into a hang and stalling replies to Grant.
+    global _MEETING_BACKOFF
+    if time.time() < _MEETING_BACKOFF:
+        return None
     try:
         up = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
-                            capture_output=True, text=True, timeout=10).stdout.split()
-    except Exception:
+                            capture_output=True, text=True, timeout=5).stdout.split()
+    except Exception as e:
+        _MEETING_BACKOFF = time.time() + 60
+        log.warning("Docker not answering (%s) — pausing meeting checks 60s", type(e).__name__)
         return None
     if m.get("container") not in up:
         try:
