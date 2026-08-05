@@ -476,6 +476,22 @@ class OmpAgent:
                         except Exception as e:
                             log.error("Failed to steer: %s", e)
 
+                    # Someone speaking in a call should not have to wait for
+                    # the current turn to end — a spoken question is as live as
+                    # a Discord message, and staler by the second.
+                    meeting = meeting_now()
+                    if meeting:
+                        for line in unseen_meeting_lines(meeting):
+                            log.info("Meeting (steered): %s", line[:120])
+                            try:
+                                self._send_rpc("steer",
+                                               "[Said out loud in the meeting "
+                                               "you are in — answer in ONE or "
+                                               "TWO sentences, it is spoken "
+                                               "aloud]\n" + line)
+                            except Exception as e:
+                                log.error("Failed to steer meeting line: %s", e)
+
             bg = threading.Thread(target=background_loop, daemon=True)
             send_typing(channel_id)
             bg.start()
