@@ -46,9 +46,14 @@ said — that is the point of the whole thing.
 Default to 60 minutes unless Grant says otherwise. The recorder leaves on its
 own when the call ends, so a generous limit costs nothing.
 
-### Talking in the call
+### Talking in the call — OFF by default, and that is deliberate
 
-Add `--voice` when Grant wants to be able to talk WITH you, not just be recorded:
+**Do not use `--voice` unless Grant asks for it in that conversation.** The
+normal job is to join, listen like any other participant, and record the
+screen. Grant weighed the round-trip delay against the value and chose silence:
+you answer in Discord, where there is no latency problem, not out loud.
+
+Add `--voice` only when he explicitly asks you to speak in a call:
 
 ```bash
 /Users/sharky/projekt/2/Recorder/start-recording.sh --voice <meeting-url> [minutes]
