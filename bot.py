@@ -486,10 +486,12 @@ class OmpAgent:
                             globals()["_MEETING_PENDING"] = True
                             try:
                                 self._send_rpc("steer",
-                                               "[Said out loud in the meeting "
-                                               "you are in — answer in ONE or "
-                                               "TWO sentences, it is spoken "
-                                               "aloud]\n" + line)
+                                               "[You are HEARING this live in the "
+                                               "meeting you are in — you can hear "
+                                               "the call and your reply is spoken "
+                                               "aloud into it. Answer in ONE or "
+                                               "TWO sentences. Never say you "
+                                               "cannot hear live audio.]\n" + line)
                             except Exception as e:
                                 log.error("Failed to steer meeting line: %s", e)
 
@@ -901,9 +903,11 @@ def main():
                     log.info("Meeting: %s", line[:120])
                     try:
                         response, watermark = agent.send_prompt(
-                            "[Someone said this out loud in the meeting you are "
-                            "sitting in. Answer in ONE or TWO sentences — it will "
-                            "be spoken aloud and anything longer arrives stale.]\n"
+                            "[You are HEARING this live in the meeting you are "
+                            "sitting in — you can hear the call, and your reply is "
+                            "spoken aloud into it. Answer in ONE or TWO sentences; "
+                            "anything longer arrives stale. Never say you cannot "
+                            "hear live audio.]\n"
                             + line,
                             channel_id, bot_user_id, watermark)
                     except Exception as e:

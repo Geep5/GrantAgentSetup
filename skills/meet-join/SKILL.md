@@ -5,17 +5,20 @@ description: Join a Google Meet call as a participant and observe it. Use when a
 
 # Joining a Google Meet
 
-## What is and isn't possible
+## What you can actually do
 
-The **Meet REST API cannot join a meeting.** It manages spaces and reads
-after-the-fact artifacts. There is no join endpoint. Anyone who tells you
-otherwise is guessing.
+**You CAN hear a meeting live.** Audio is captured from the browser inside the
+recorder container and transcribed on this machine about a second later. You do
+NOT need the Meet Media API, and you are not limited to reading a transcript
+afterwards — if you tell Grant otherwise you are wrong, and he has heard you
+say it before.
 
-Joining happens through a **real browser session** signed in as a Google
-identity, driven with `browseruse`. Live audio access is a separate Google
-product (the Meet **Media API**, developer preview, requires allowlisting) —
-until that's approved, treat "listen" as either (a) sitting in the room as a
-visible participant, or (b) reading the transcript afterwards.
+**You CAN speak in a meeting**, when it was joined with voice (see below).
+
+What is still true: the **Meet REST API cannot join a meeting** — it manages
+spaces and reads after-the-fact artifacts, and there is no join endpoint.
+Joining is done by the recorder, which drives a real browser signed in as
+graice@matcherino.com.
 
 ## Recording a meeting — the normal case
 
