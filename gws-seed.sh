@@ -34,7 +34,8 @@ for ACCOUNT in $ACCOUNTS; do
   # cache encrypted under a different key is exactly what makes gws start
   # deleting credentials.
   rm -f "$DEST/token_cache.json" "$DEST/.encryption_key"
-  chmod 600 "$DEST"/* 2>/dev/null || true
+  find "$DEST" -type f -exec chmod 600 {} \; 2>/dev/null || true
+  find "$DEST" -type d -exec chmod 700 {} \; 2>/dev/null || true
   echo "  ✓ $ACCOUNT seeded"
 done
 

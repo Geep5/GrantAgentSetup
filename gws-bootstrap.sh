@@ -69,13 +69,29 @@ fi
 
 mkdir -p "$DEST"
 chmod 700 "$VAULT" "$DEST"
-# gws keeps user credentials either encrypted or plain depending on how it was
-# authed; take whichever exists. The token cache is deliberately NOT copied —
-# it is per-config-dir state and a stale one is exactly what breaks agents.
-for f in credentials.json credentials.enc client_secret.json; do
-  [ -f "$WORK/$f" ] && cp "$WORK/$f" "$DEST/$f"
-done
-chmod 600 "$DEST"/* 2>/dev/null || true
+
+# EXPORT, don't copy. With the file keyring a fresh `auth login` leaves no
+# copyable credentials file in the config dir, so a copy-only bootstrap
+# silently vaults nothing and the account looks authorized until first use.
+# `auth export` is what materializes the refresh token. Login and export must
+# happen as one unit in a dir with NO stale plaintext credentials.json, because
+# plaintext SHADOWS credentials.enc — a stale one makes export emit the OLD
+# identity.
+cp "$WORK/client_secret.json" "$DEST/client_secret.json"
+if ! gws auth export --unmasked > "$DEST/credentials.json" 2>/dev/null; then
+  gws auth export > "$DEST/credentials.json" 2>/dev/null || true
+fi
+if [ ! -s "$DEST/credentials.json" ]; then
+  rm -f "$DEST/credentials.json"
+  echo "Login succeeded but no credentials could be exported — nothing vaulted." >&2
+  echo "Run 'gws auth export' by hand in $WORK to see why." >&2
+  exit 1
+fi
+# Never vault the token cache or encryption key: they are per-dir state, and a
+# cache encrypted under a different key is what makes gws delete credentials.
+chmod 700 "$DEST"
+find "$DEST" -type f -exec chmod 600 {} \; 2>/dev/null || true
+find "$DEST" -type d -exec chmod 700 {} \; 2>/dev/null || true
 
 echo
 echo "✅ $ACCOUNT vaulted at $DEST"
