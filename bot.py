@@ -490,7 +490,9 @@ class OmpAgent:
                                                "[You are HEARING this live in the "
                                                "meeting you are in — you can hear "
                                                "the call and your reply is spoken "
-                                               "aloud into it. Answer in ONE or "
+                                               "aloud into it AUTOMATICALLY — you do not run "
+                                               "anything to speak and cannot verify it "
+                                               "played. Answer in ONE or "
                                                "TWO sentences. Never say you "
                                                "cannot hear live audio.]\n" + line)
                             except Exception as e:
@@ -874,10 +876,14 @@ def post_response(channel_id: str, response: str) -> bool:
     ended = SESSION_END_MARKER in response
     text = response.replace(SESSION_END_MARKER, "").strip()
 
-    # If this answer was prompted by something said in a call, it belongs in
-    # the room as well as in Discord — whichever path produced it.
+    # While sitting in a voice call, EVERYTHING said goes to the room as well as
+    # to Discord. This used to be gated on a one-shot "a meeting line is
+    # pending" flag, which meant the first answer was spoken and every later one
+    # silently was not — several spoken questions can arrive during a single
+    # turn, and a turn produces exactly one reply. Being in the call is the
+    # condition; nothing else.
     global _MEETING_PENDING
-    if _MEETING_PENDING and text:
+    if text:
         _MEETING_PENDING = False
         meeting = meeting_now()
         if meeting and meeting.get("voice"):
@@ -970,7 +976,10 @@ def main():
                         response, watermark = agent.send_prompt(
                             "[You are HEARING this live in the meeting you are "
                             "sitting in — you can hear the call, and your reply is "
-                            "spoken aloud into it. Answer in ONE or TWO sentences; "
+                            "spoken aloud into it AUTOMATICALLY — you do not run anything "
+                            "to speak, and you cannot verify it played, so never "
+                            "claim you spoke as if it were an action you took. "
+                            "Answer in ONE or TWO sentences; "
                             "anything longer arrives stale. Never say you cannot "
                             "hear live audio.]\n"
                             + line,
