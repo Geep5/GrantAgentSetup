@@ -27,13 +27,18 @@ for ACCOUNT in $ACCOUNTS; do
   fi
   DEST="gws/$ACCOUNT"
   mkdir -p "$DEST" && chmod 700 "$DEST"
-  for f in credentials.json credentials.enc client_secret.json; do
+  # .encryption_key MUST travel with credentials.enc — it is what decrypts it.
+  # (Dropping it was silently fatal: the copy looked fine and every call then
+  # failed as though the scopes were wrong.)
+  for f in credentials.json credentials.enc client_secret.json .encryption_key; do
     [ -f "$SRC/$f" ] && cp "$SRC/$f" "$DEST/$f"
   done
   # Never copy the token cache or encryption key: they are per-dir state, and a
   # cache encrypted under a different key is exactly what makes gws start
   # deleting credentials.
-  rm -f "$DEST/token_cache.json" "$DEST/.encryption_key"
+  # Only the token cache is per-dir state; a stale one is what makes gws start
+  # deleting credentials.
+  rm -f "$DEST/token_cache.json"
   find "$DEST" -type f -exec chmod 600 {} \; 2>/dev/null || true
   find "$DEST" -type d -exec chmod 700 {} \; 2>/dev/null || true
   echo "  ✓ $ACCOUNT seeded"
