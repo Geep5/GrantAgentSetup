@@ -707,6 +707,74 @@ def archive_session():
         shutil.move(SESSION_DIR, os.path.join(SCRIPT_DIR, "sessions", f"done-{stamp}"))
 
 
+
+# ---------------------------------------------------------------- meetings --
+# When the bot is sitting in a call, spoken questions should reach it the same
+# way Discord messages do — same session, same context, no separate loop. A
+# meeting is "live" only while state/meeting.json exists AND its container is
+# still up, so a crashed recorder can't leave the bot listening to a ghost.
+
+RECORDER_DIR = os.environ.get("RECORDER_DIR", "/Users/sharky/projekt/2/Recorder")
+MEETING_STATE = os.path.join(SCRIPT_DIR, "state", "meeting.json")
+# Whisper mangles names constantly — Graice becomes Grace, Gracie, Greis.
+WAKE_RE = re.compile(os.environ.get("MEETING_WAKE", r"grac|grais|greis|graice"), re.I)
+
+
+def meeting_now():
+    """The live meeting, or None. Returns {'container','dir','voice'}."""
+    try:
+        with open(MEETING_STATE) as fh:
+            m = json.load(fh)
+    except Exception:
+        return None
+    try:
+        up = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
+                            capture_output=True, text=True, timeout=10).stdout.split()
+    except Exception:
+        return None
+    if m.get("container") not in up:
+        try:
+            os.remove(MEETING_STATE)      # call is over; stop listening
+        except OSError:
+            pass
+        log.info("Meeting ended — no longer listening to the call")
+        return None
+    return m
+
+
+def unseen_meeting_lines(meeting):
+    """New transcript lines that address this bot by name."""
+    live = os.path.join(meeting["dir"], "live.txt")
+    mark_path = os.path.join(meeting["dir"], ".bot-mark")
+    try:
+        with open(live) as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    try:
+        with open(mark_path) as fh:
+            seen = int(fh.read().strip() or 0)
+    except (OSError, ValueError):
+        seen = 0
+    fresh = lines[seen:]
+    if fresh:
+        with open(mark_path, "w") as fh:
+            fh.write(str(len(lines)))
+    return [ln for ln in fresh if WAKE_RE.search(ln)]
+
+
+def speak_in_meeting(container: str, text: str) -> None:
+    """Say it out loud in the call. Needs a recording started with --voice."""
+    spoken = re.sub(r"[`*_#>\[\]()]", "", text).strip()
+    if not spoken:
+        return
+    try:
+        subprocess.run([os.path.join(RECORDER_DIR, "speak.sh"), container,
+                        spoken[:600]], capture_output=True, timeout=180)
+    except Exception as e:
+        log.error("Failed to speak in meeting: %s", e)
+
+
 def post_response(channel_id: str, response: str) -> bool:
     """Post agent text to Discord. Returns True if the session should end."""
     ended = SESSION_END_MARKER in response
@@ -789,6 +857,31 @@ def main():
                  POLL_INTERVAL, SESSION_END_MARKER)
         while True:
             time.sleep(POLL_INTERVAL)
+
+            # A question asked out loud in a call is just another message.
+            meeting = meeting_now()
+            if meeting:
+                for line in unseen_meeting_lines(meeting):
+                    log.info("Meeting: %s", line[:120])
+                    try:
+                        response, watermark = agent.send_prompt(
+                            "[Someone said this out loud in the meeting you are "
+                            "sitting in. Answer in ONE or TWO sentences — it will "
+                            "be spoken aloud and anything longer arrives stale.]\n"
+                            + line,
+                            channel_id, bot_user_id, watermark)
+                    except Exception as e:
+                        log.error("Agent error (meeting): %s", e)
+                        continue
+                    if meeting.get("voice"):
+                        speak_in_meeting(meeting["container"],
+                                         response.replace(SESSION_END_MARKER, ""))
+                    if post_response(channel_id, response):
+                        log.info("Session complete")
+                        agent.stop()
+                        archive_session()
+                        return
+
             try:
                 messages = get_messages(channel_id, limit=10, after=watermark)
             except Exception as e:

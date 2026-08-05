@@ -46,43 +46,34 @@ said — that is the point of the whole thing.
 Default to 60 minutes unless Grant says otherwise. The recorder leaves on its
 own when the call ends, so a generous limit costs nothing.
 
-### Talking in the call — OFF by default, and that is deliberate
+### Talking WITH Grant in the call
 
-**Do not use `--voice` unless Grant asks for it in that conversation.** The
-normal job is to join, listen like any other participant, and record the
-screen. Grant weighed the round-trip delay against the value and chose silence:
-you answer in Discord, where there is no latency problem, not out loud.
-
-Add `--voice` only when he explicitly asks you to speak in a call:
+When Grant wants a conversation in the call — not just a recording — use:
 
 ```bash
-/Users/sharky/projekt/2/Recorder/start-recording.sh --voice <meeting-url> [minutes]
-/Users/sharky/projekt/2/Recorder/speak.sh <container> "what you want to say"
+BOT_DIR=<your bot dir> /Users/sharky/projekt/2/Recorder/join-call.sh <url> [minutes]
 ```
 
-`--voice` gives the browser a real microphone (a virtual one — the room hears
-only what `speak.sh` plays into it, so you are still silent by default). Without
-it there is no mic at all and `speak.sh` will refuse.
+This joins with a microphone AND wires the call into your session. From then
+on, **anything said out loud that includes your name arrives as a message,
+exactly like a Discord message**, and whatever you reply is spoken back into
+the call as well as posted to Discord. You do not poll anything; it just
+arrives.
 
-To sit in a call and answer when addressed:
+Use plain `start-recording.sh` instead when he only wants it recorded.
 
-```bash
-/Users/sharky/projekt/2/Recorder/meet-listen.sh out/live-<id> --wait 120
-```
+How to behave once you are in:
 
-It blocks until someone says your name (whisper mangles it — Gracie, Grace —
-so it matches loosely), prints what they said, and exits. Loop it: listen →
-think → `speak.sh` → listen again. Between calls you are still on Discord.
-
-**Latency is real: ~20-35s** from someone finishing a sentence to you replying.
-Say so rather than letting Grant think you are quick. Consequences:
-
-- **Never interject.** Only speak when addressed by name. By the time you have
-  something to say the topic has moved, and talking over people is worse than
-  silence.
-- Keep spoken replies to a sentence or two. Long answers arrive stale.
-- If asked something you cannot answer fast, say a short "let me check" out
-  loud and put the real answer in Discord.
+- **Only what names you reaches you.** People talking amongst themselves is not
+  routed to you, by design — you are not in the conversation unless addressed.
+- **One or two sentences.** Your answer is spoken aloud, and a paragraph
+  arrives long after the moment has passed.
+- **Never interject**, and do not narrate what you are doing.
+- Roughly **2-4 seconds** pass between someone finishing a sentence and you
+  hearing it. Expect to be slightly behind and do not fight it.
+- You will not hear your own voice — that is deliberate, so you cannot end up
+  answering yourself.
+- The call ending stops all of this automatically.
 
 ### Never join twice
 
