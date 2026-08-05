@@ -78,6 +78,21 @@ How to behave once you are in:
   answering yourself.
 - The call ending stops all of this automatically.
 
+### Leaving a call
+
+```bash
+/Users/sharky/projekt/2/Recorder/leave-call.sh
+```
+
+That is the whole answer when Grant says "leave the call" — no argument needed,
+it leaves whichever call you are in. Do NOT hunt for a container to kill: a
+graceful stop is what lets the recording finalize and the Google login survive,
+and killing the container destroys both.
+
+If a container seems to reappear after you stop it, that is not a supervisor
+fighting you — someone else started a new one. Check `recording-status.sh`
+before concluding something is wrong.
+
 ### Never join twice
 
 Once `start-recording.sh` returns a job, **you are already in the room.** Do not
@@ -111,75 +126,6 @@ Runs locally by default (whisper.cpp on Metal) — free, and the audio never
 leaves the machine. If a call has hard audio (several speakers, accents, bad
 mics) and the transcript is visibly dropping words, rerun with `ASR=openai`,
 which is more accurate but uploads each utterance.
-
-### Talking in the call — OFF by default, and that is deliberate
-
-**Do not use `--voice` unless Grant asks for it in that conversation.** The
-normal job is to join, listen like any other participant, and record the
-screen. Grant weighed the round-trip delay against the value and chose silence:
-you answer in Discord, where there is no latency problem, not out loud.
-
-Add `--voice` only when he explicitly asks you to speak in a call:
-
-```bash
-/Users/sharky/projekt/2/Recorder/start-recording.sh --voice <meeting-url> [minutes]
-/Users/sharky/projekt/2/Recorder/speak.sh <container> "what you want to say"
-```
-
-`--voice` gives the browser a real microphone (a virtual one — the room hears
-only what `speak.sh` plays into it, so you are still silent by default). Without
-it there is no mic at all and `speak.sh` will refuse.
-
-To sit in a call and answer when addressed:
-
-```bash
-/Users/sharky/projekt/2/Recorder/meet-listen.sh out/live-<id> --wait 120
-```
-
-It blocks until someone says your name (whisper mangles it — Gracie, Grace —
-so it matches loosely), prints what they said, and exits. Loop it: listen →
-think → `speak.sh` → listen again. Between calls you are still on Discord.
-
-**Latency is real: ~20-35s** from someone finishing a sentence to you replying.
-Say so rather than letting Grant think you are quick. Consequences:
-
-- **Never interject.** Only speak when addressed by name. By the time you have
-  something to say the topic has moved, and talking over people is worse than
-  silence.
-- Keep spoken replies to a sentence or two. Long answers arrive stale.
-- If asked something you cannot answer fast, say a short "let me check" out
-  loud and put the real answer in Discord.
-
-### Never join twice
-
-Once `start-recording.sh` returns a job, **you are already in the room.** Do not
-also open a browser to "check", "verify", or "watch" — that puts a SECOND
-participant in the call under a different name, and a browser on Grant's
-machine plays meeting audio through his speakers, which is an echo loop when
-he's in the same call. If you want to know what's happening, read the log via
-`recording-status.sh`, not a browser.
-
-The recorder has its own persistent login as graice@matcherino.com. **Never ask
-Grant to sign a Chrome profile in for a meeting** — if a browser looks signed
-out, that is irrelevant to recording, and asking him to fix it is a dead end.
-
-### Live transcript, during the call
-
-```bash
-/Users/sharky/projekt/2/Recorder/live-transcribe.sh <container> &
-```
-
-The container name comes from `recording-status.sh` (e.g. `rec-30392`). Text
-lands in `out/live-<id>/live.txt` and grows about once a minute — read that
-file to answer "what are they saying right now". It runs a second audio tap and
-does not disturb the recording.
-
-Roughly a minute behind live, because whisper needs a closed chunk to work on.
-Say that rather than implying it is instant. The in-progress mp4 itself is
-unreadable until the call ends, so `live.txt` is the only live source.
-
-**Say what you did**: "recording as Graice Matcherino, job rec-…". Grant cannot
-see a container, so if you don't say it, he has no way to know it worked.
 
 ## Joining visibly (only when Grant asks to watch)
 
