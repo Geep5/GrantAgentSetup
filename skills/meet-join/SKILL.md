@@ -17,12 +17,32 @@ product (the Meet **Media API**, developer preview, requires allowlisting) —
 until that's approved, treat "listen" as either (a) sitting in the room as a
 visible participant, or (b) reading the transcript afterwards.
 
-## Join a meeting
+## Join a meeting — HEADLESS by default
+
+Omit `--headed`. Headless is not a fallback, it is the right mode: no window
+opens on Grant's screen, and headless Chrome reports **no microphone and no
+speaker**, so the bot cannot broadcast and cannot pipe meeting audio back out
+of Grant's speakers (which causes an echo loop when he's in the same call).
 
 ```bash
-browseruse --profile Support --session meet --headed open "https://meet.google.com/xxx-xxxx-xxx"
-browseruse --session meet state          # read the screen
+browseruse --profile Support --session meet open "https://meet.google.com/xxx-xxxx-xxx"
+browseruse --session meet state
 ```
+
+The headless join takes **two clicks**, both of which must be read out of
+`state` (indices change every run — never hardcode them):
+
+1. **"Join now"** — a normal button.
+2. **"Continue without microphone"** — Meet asks this because headless has no
+   mic. It lives inside a shadow-DOM dialog ("Do you want people to hear you in
+   the meeting?"). `state` still lists it with an index; click that index.
+   Until this is dismissed the page sits on "Still trying to get in…" and you
+   are NOT in the meeting, even though in-call controls are visible.
+
+Then confirm with the participants API below — the screen alone will mislead
+you here.
+
+Use `--headed` only when Grant explicitly wants to watch.
 
 Notes that matter:
 
@@ -37,8 +57,10 @@ Notes that matter:
   - **Pre-join**: a "Join now" / "Ask to join" button → click it, then re-read.
   - **Already in**: mic/camera toggles, meeting code, "Meeting details" →
     you're in the room.
-- **Mute immediately on joining.** Click the "Turn off microphone" control. A
-  listener must never broadcast — the room may otherwise hear the machine.
+- **Muting is automatic when headless** (there is no mic to broadcast). In
+  `--headed` mode you MUST click "Turn off microphone" yourself, and be aware
+  that the browser will also play meeting audio through Grant's speakers — if
+  he is in the same call, that is an echo loop.
 - Leave with `browseruse --session meet close`.
 
 ## Create a meeting (for tests, or to hand someone a link)
@@ -81,7 +103,12 @@ don't summarize a meeting you have no record of.
   was authorized without them — Grant must re-run `gws-bootstrap.sh` with the
   full scope list (a re-login REPLACES scopes, so it must include the existing
   ones too). You cannot fix this yourself.
-- Joining needs a **GUI session** on the machine — Chrome opens a real window.
+- Headless needs no GUI session and opens no window. `--headed` does open a
+  real window on whatever display the machine is signed into.
+- Headless has **no speaker**, so the bot cannot hear live audio. That is fine
+  for attending and for reading the transcript afterwards; it is the reason a
+  live-listening setup needs either a virtual audio device in `--headed` mode
+  or the Meet Media API.
 
 ## Rules
 
