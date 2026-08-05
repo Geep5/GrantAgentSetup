@@ -1,103 +1,78 @@
 #!/bin/sh
-# gws-bootstrap.sh <account@domain> — authorize ONE Google account into the vault.
+# gws-bootstrap.sh <account@domain> [comma,separated,scopes]
+#   Authorize ONE Google account straight into the vault.
 #
-# Run this yourself, on a machine with a browser. It never touches ~/.config/gws
-# (the shared dir), so bootstrapping a second account cannot destroy the first.
+# Run this yourself, on a machine with a browser. It never touches
+# ~/.config/gws (the shared dir), so bootstrapping one account cannot destroy
+# another.
 #
-# What it does:
-#   1. makes a scratch config dir for the login
-#   2. runs `gws auth login` there (browser opens)
-#   3. asserts the account you got is the account you asked for
-#   4. copies the credentials into ~/.config/gws-vault/<account>/
+# DESIGN NOTE — why the login happens IN the vault dir:
+# An earlier version logged in to a scratch dir and then copied/exported the
+# result. Both variants failed silently in different ways (nothing to copy with
+# the file keyring; an empty export). Logging in directly where the credentials
+# must live removes the whole class of bug: whatever `auth login` writes IS the
+# vaulted credential.
 #
-# Agents are seeded FROM the vault by gws-seed.sh, so a bot that loses or
-# corrupts its credentials is re-seeded in a second with no browser step.
-#
-# Once per account, plus whenever Google revokes the refresh token (password
-# change, 6 months unused, or explicit revocation).
+# The one thing that must be handled is shadowing: a plaintext credentials.json
+# takes precedence over an encrypted credentials.enc, so a stale plaintext file
+# would mask the new login (and make gws report the OLD identity). It is moved
+# aside before the login and deleted only once the new session is proven.
 
 set -e
 ACCOUNT="$1"
 [ -z "$ACCOUNT" ] && { echo "usage: $0 <account@domain> [comma,separated,scopes]"; exit 1; }
+SCOPES="$2"
 
 VAULT="${GWS_VAULT:-$HOME/.config/gws-vault}"
 DEST="$VAULT/$ACCOUNT"
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$DEST"; chmod 700 "$VAULT" "$DEST"
 
-# The keychain cannot be unlocked from cron, so every agent runs on the file
-# backend. Bootstrap on the same backend or the credentials are unreadable later.
+# cron cannot unlock the OS keychain, so every agent uses the file backend —
+# bootstrap on the same backend or the credentials are unreadable later.
 export GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file
-export GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$WORK"
+export GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$DEST"
 
-# The OAuth client is shared across accounts; reuse it if one already exists.
-for SRC in "$VAULT"/*/client_secret.json "$HOME/.config/gws/client_secret.json"; do
-  [ -f "$SRC" ] && { cp "$SRC" "$WORK/client_secret.json"; break; }
-done
-if [ ! -f "$WORK/client_secret.json" ]; then
-  echo "No client_secret.json found. Run 'gws auth setup' once to create the"
-  echo "OAuth client, then re-run this script."
-  exit 1
+# Reuse the shared OAuth client if this account doesn't have one yet.
+if [ ! -f "$DEST/client_secret.json" ]; then
+  for SRC in "$VAULT"/*/client_secret.json "$HOME/.config/gws/client_secret.json"; do
+    [ -f "$SRC" ] && { cp "$SRC" "$DEST/client_secret.json"; break; }
+  done
 fi
+[ -f "$DEST/client_secret.json" ] || { echo "No client_secret.json anywhere. Run 'gws auth setup' once."; exit 1; }
 
-# Optional extra scopes: gws's default login does NOT include Meet (or other
-# non-core APIs), and a re-login REPLACES the scope set rather than adding to
-# it — so extras must be passed together with everything already needed.
-SCOPES="$2"
+# Keep the current credentials recoverable, and un-shadow the new login.
+STAMP=$(date +%Y%m%d-%H%M%S)
+for f in credentials.json credentials.enc token_cache.json; do
+  [ -f "$DEST/$f" ] && mv "$DEST/$f" "$DEST/.bak-$STAMP-$f"
+done
 
 echo "Logging in as $ACCOUNT — a browser will open."
-echo "IMPORTANT: pick $ACCOUNT, and tick EVERY consent checkbox (a missed box"
-echo "means a scope you'll only discover as a 403 days later)."
-if [ -n "$SCOPES" ]; then
-  gws auth login --scopes "$SCOPES"
-else
-  gws auth login
-fi
+echo "IMPORTANT: pick $ACCOUNT, and tick EVERY consent checkbox."
+[ -n "$SCOPES" ] && echo "Requesting scopes: $SCOPES"
+if [ -n "$SCOPES" ]; then gws auth login --scopes "$SCOPES"; else gws auth login; fi
 
 # Never trust the browser to have used the account you intended.
 GOT=$(gws gmail users getProfile --params '{"userId":"me"}' 2>/dev/null \
       | sed -n 's/.*"emailAddress"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-if [ -z "$GOT" ]; then
-  echo "Login did not produce a working session — nothing written to the vault."
-  exit 1
-fi
 if [ "$GOT" != "$ACCOUNT" ]; then
-  echo "You asked for $ACCOUNT but logged in as $GOT."
-  echo "Nothing written to the vault. Re-run and choose the right account."
+  echo "Expected $ACCOUNT but got '${GOT:-nothing}'. Rolling back to the previous credentials." >&2
+  rm -f "$DEST/credentials.json" "$DEST/credentials.enc" "$DEST/token_cache.json"
+  for f in credentials.json credentials.enc; do
+    [ -f "$DEST/.bak-$STAMP-$f" ] && mv "$DEST/.bak-$STAMP-$f" "$DEST/$f"
+  done
   exit 1
 fi
 
-mkdir -p "$DEST"
-chmod 700 "$VAULT" "$DEST"
-
-# EXPORT, don't copy. With the file keyring a fresh `auth login` leaves no
-# copyable credentials file in the config dir, so a copy-only bootstrap
-# silently vaults nothing and the account looks authorized until first use.
-# `auth export` is what materializes the refresh token. Login and export must
-# happen as one unit in a dir with NO stale plaintext credentials.json, because
-# plaintext SHADOWS credentials.enc — a stale one makes export emit the OLD
-# identity.
-cp "$WORK/client_secret.json" "$DEST/client_secret.json"
-if ! gws auth export --unmasked > "$DEST/credentials.json" 2>/dev/null; then
-  gws auth export > "$DEST/credentials.json" 2>/dev/null || true
-fi
-if [ ! -s "$DEST/credentials.json" ]; then
-  rm -f "$DEST/credentials.json"
-  echo "Login succeeded but no credentials could be exported — nothing vaulted." >&2
-  echo "Run 'gws auth export' by hand in $WORK to see why." >&2
-  exit 1
-fi
-# Never vault the token cache or encryption key: they are per-dir state, and a
-# cache encrypted under a different key is what makes gws delete credentials.
-chmod 700 "$DEST"
 find "$DEST" -type f -exec chmod 600 {} \; 2>/dev/null || true
 find "$DEST" -type d -exec chmod 700 {} \; 2>/dev/null || true
 
 echo
-echo "✅ $ACCOUNT vaulted at $DEST"
+echo "✅ $ACCOUNT authorized in $DEST"
+gws auth status 2>/dev/null | sed -n 's/.*"scopes".*/  (scope list below)/p'
+echo "Previous credentials kept as $DEST/.bak-$STAMP-* — delete once you're happy."
+echo
 echo "Next: add $ACCOUNT to GWS_ACCOUNTS in a bot's .env (comma-separated), then:"
 echo "  ./gws-seed.sh <bot-runtime-dir>"
 echo
-echo "If Google returns 403 serviceusage/serviceUsageConsumer for this account,"
-echo "grant it that role on the OAuth client's GCP project — it is required"
-echo "once per account and is not something the agent can fix at runtime."
+echo "If Google returns 403 serviceusage/serviceUsageConsumer, grant that account"
+echo "roles/serviceusage.serviceUsageConsumer on the OAuth client's GCP project."
