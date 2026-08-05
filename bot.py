@@ -457,7 +457,13 @@ class OmpAgent:
             def background_loop():
                 nonlocal watermark
                 while not typing_stop.is_set():
-                    if typing_stop.wait(5):
+                    # In a live call, five seconds of not-noticing is five
+                    # seconds of someone waiting in silence. Poll hard while a
+                    # meeting is up, gently otherwise (13 bots share the
+                    # Discord rate limit). The file check is cheap; meeting_now()
+                    # shells out to docker and must not run on this path.
+                    beat = 1 if os.path.exists(MEETING_STATE) else 5
+                    if typing_stop.wait(beat):
                         break
                     send_typing(channel_id)
                     try:
@@ -920,7 +926,7 @@ def main():
         log.info("Polling channel every %.0fs — session runs until %s",
                  POLL_INTERVAL, SESSION_END_MARKER)
         while True:
-            time.sleep(POLL_INTERVAL)
+            time.sleep(1 if os.path.exists(MEETING_STATE) else POLL_INTERVAL)
 
             # A question asked out loud in a call is just another message.
             meeting = meeting_now()
