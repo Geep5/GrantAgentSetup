@@ -18,7 +18,7 @@
 
 set -e
 ACCOUNT="$1"
-[ -z "$ACCOUNT" ] && { echo "usage: $0 <account@domain>"; exit 1; }
+[ -z "$ACCOUNT" ] && { echo "usage: $0 <account@domain> [comma,separated,scopes]"; exit 1; }
 
 VAULT="${GWS_VAULT:-$HOME/.config/gws-vault}"
 DEST="$VAULT/$ACCOUNT"
@@ -40,10 +40,19 @@ if [ ! -f "$WORK/client_secret.json" ]; then
   exit 1
 fi
 
+# Optional extra scopes: gws's default login does NOT include Meet (or other
+# non-core APIs), and a re-login REPLACES the scope set rather than adding to
+# it — so extras must be passed together with everything already needed.
+SCOPES="$2"
+
 echo "Logging in as $ACCOUNT — a browser will open."
 echo "IMPORTANT: pick $ACCOUNT, and tick EVERY consent checkbox (a missed box"
 echo "means a scope you'll only discover as a 403 days later)."
-gws auth login
+if [ -n "$SCOPES" ]; then
+  gws auth login --scopes "$SCOPES"
+else
+  gws auth login
+fi
 
 # Never trust the browser to have used the account you intended.
 GOT=$(gws gmail users getProfile --params '{"userId":"me"}' 2>/dev/null \
