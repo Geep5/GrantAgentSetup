@@ -483,6 +483,7 @@ class OmpAgent:
                     if meeting:
                         for line in unseen_meeting_lines(meeting):
                             log.info("Meeting (steered): %s", line[:120])
+                            globals()["_MEETING_PENDING"] = True
                             try:
                                 self._send_rpc("steer",
                                                "[Said out loud in the meeting "
@@ -733,6 +734,7 @@ def archive_session():
 RECORDER_DIR = os.environ.get("RECORDER_DIR", "/Users/sharky/projekt/2/Recorder")
 MEETING_STATE = os.path.join(SCRIPT_DIR, "state", "meeting.json")
 _MEETING_BACKOFF = 0.0
+_MEETING_PENDING = False
 # Whisper mangles names constantly — Graice becomes Grace, Gracie, Greis.
 WAKE_RE = re.compile(os.environ.get("MEETING_WAKE", r"grac|grais|greis|graice"), re.I)
 
@@ -804,6 +806,15 @@ def post_response(channel_id: str, response: str) -> bool:
     """Post agent text to Discord. Returns True if the session should end."""
     ended = SESSION_END_MARKER in response
     text = response.replace(SESSION_END_MARKER, "").strip()
+
+    # If this answer was prompted by something said in a call, it belongs in
+    # the room as well as in Discord — whichever path produced it.
+    global _MEETING_PENDING
+    if _MEETING_PENDING and text:
+        _MEETING_PENDING = False
+        meeting = meeting_now()
+        if meeting and meeting.get("voice"):
+            speak_in_meeting(meeting["container"], text)
     if text:
         for chunk in split_message(text):
             send_message(channel_id, chunk)
@@ -898,9 +909,6 @@ def main():
                     except Exception as e:
                         log.error("Agent error (meeting): %s", e)
                         continue
-                    if meeting.get("voice"):
-                        speak_in_meeting(meeting["container"],
-                                         response.replace(SESSION_END_MARKER, ""))
                     if post_response(channel_id, response):
                         log.info("Session complete")
                         agent.stop()
