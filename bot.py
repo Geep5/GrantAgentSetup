@@ -782,7 +782,7 @@ RECORDER_DIR = os.environ.get("RECORDER_DIR", "/Users/sharky/projekt/2/Recorder"
 LEAVE_RE = re.compile(
     r"\b(leave|exit|drop off|hang up|get out of|sign off from)\b"
     r"[^.?!]{0,20}\b(call|meeting|room|hangout)\b\W*$"
-    r"|\byou can (leave|go)\b\W*$", re.I)
+    r"|\byou can (leave|go)\b[^.?!]{0,12}$", re.I)
 
 
 def leave_meeting_now() -> None:
