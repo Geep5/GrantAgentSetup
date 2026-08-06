@@ -803,15 +803,29 @@ def unseen_meeting_lines(meeting):
     Falls back to name-matching raw lines when the detector isn't running:
     worse, but better than going deaf.
     """
-    inbox = os.path.join(meeting["dir"], "inbox.jsonl")
-    use_inbox = os.path.exists(inbox)
-    source = inbox if use_inbox else os.path.join(meeting["dir"], "live.txt")
+    # Three possible sources, most-processed first:
+    #   escalate.jsonl — the fast tier decided this needs real tools (preferred)
+    #   inbox.jsonl    — complete requests, no fast tier running
+    #   live.txt       — raw speech, nothing else running
+    # Taking the most-processed one available means the heavy agent is only
+    # woken for work that actually needs it.
+    escalated = os.path.join(meeting["dir"], "escalate.jsonl")
+    inbox_p = os.path.join(meeting["dir"], "inbox.jsonl")
+    fast_running = os.path.exists(os.path.join(meeting["dir"], ".fast-mark"))
+    if os.path.exists(escalated):
+        source, use_inbox, tag = escalated, True, ".bot-mark-escalate"
+    elif fast_running:
+        return []          # fast tier is handling it; do not double-answer
+    elif os.path.exists(inbox_p):
+        source, use_inbox, tag = inbox_p, True, ".bot-mark-inbox"
+    else:
+        source, use_inbox, tag = os.path.join(meeting["dir"], "live.txt"), False, ".bot-mark"
+    inbox = source
     # The mark is a LINE COUNT, so it only means anything for the file it came
     # from. The detector starts a moment after the recorder, so the source
     # switches from live.txt to inbox.jsonl mid-call — and a mark of 17 raw
     # lines then swallowed every entry of a 2-line inbox, silently.
-    mark_path = os.path.join(meeting["dir"],
-                             ".bot-mark-inbox" if use_inbox else ".bot-mark")
+    mark_path = os.path.join(meeting["dir"], tag)
     try:
         with open(source) as fh:
             lines = fh.read().splitlines()
