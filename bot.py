@@ -501,6 +501,8 @@ class OmpAgent:
                                 continue
                             log.info("Meeting (steered): %s", line[:120])
                             globals()["_MEETING_PENDING"] = True
+                            if LEAVE_RE.search(line):
+                                leave_meeting_now()
                             try:
                                 self._send_rpc("steer",
                                                "[You are HEARING this live in the "
@@ -770,6 +772,27 @@ def archive_session():
 # still up, so a crashed recorder can't leave the bot listening to a ghost.
 
 RECORDER_DIR = os.environ.get("RECORDER_DIR", "/Users/sharky/projekt/2/Recorder")
+# Asked out loud to leave, the bot ANSWERED ("I'll stay and help with anything
+# you need") and stayed in the room. A spoken instruction to hang up is an
+# action, not a conversation topic — the turn detector has already established
+# the line was addressed to us, so acting on it is safe.
+# Anchored at the end of the sentence: "can you leave this meeting?" acts,
+# "we should leave the meeting agenda alone" does not. Hanging up wrongly is
+# worse than missing one, so this errs toward doing nothing.
+LEAVE_RE = re.compile(
+    r"\b(leave|exit|drop off|hang up|get out of|sign off from)\b"
+    r"[^.?!]{0,20}\b(call|meeting|room|hangout)\b\W*$"
+    r"|\byou can (leave|go)\b\W*$", re.I)
+
+
+def leave_meeting_now() -> None:
+    try:
+        subprocess.run([os.path.join(RECORDER_DIR, "leave-call.sh")],
+                       capture_output=True, timeout=120,
+                       env={**os.environ, "BOT_DIR": SCRIPT_DIR})
+        log.info("Left the call (asked out loud)")
+    except Exception as e:
+        log.error("Failed to leave the call: %s", e)
 MEETING_STATE = os.path.join(SCRIPT_DIR, "state", "meeting.json")
 _MEETING_BACKOFF = 0.0
 _MEETING_PENDING = False
@@ -1034,6 +1057,8 @@ def main():
                     except Exception as e:
                         log.error("Agent error (meeting): %s", e)
                         continue
+                    if LEAVE_RE.search(line):
+                        leave_meeting_now()
                     if post_response(channel_id, response):
                         agent = restart_session(agent, channel_id, bot_user_id)
                         continue
