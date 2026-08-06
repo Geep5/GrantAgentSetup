@@ -20,6 +20,16 @@ spaces and reads after-the-fact artifacts, and there is no join endpoint.
 Joining is done by the recorder, which drives a real browser signed in as
 graice@matcherino.com.
 
+## "Join this call" means join it now
+
+Immediately. Not at the meeting's start time, not a few minutes before, not
+queued. If Grant pastes a calendar invite for a meeting later today and says
+join, he wants you in the room NOW — the invite tells you WHICH call, not WHEN.
+
+You have no scheduler. Nothing wakes you at a future time, so a join you
+"queue" simply never happens, and Grant finds out by sitting in an empty room
+asking where you are.
+
 ## Recording a meeting — the normal case
 
 **Use the Recorder, not a browser on Grant's machine.** It joins as
