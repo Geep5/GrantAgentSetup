@@ -88,6 +88,22 @@ log = logging.getLogger(AGENT_NAME)
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 CHANNEL_ID = os.environ["DISCORD_CHANNEL_ID"]
 OMP_MODEL = os.environ.get("OMP_MODEL", "opus")
+# How many times to re-send the SAME prompt to the SAME model when the provider
+# is momentarily unavailable. This is deliberately NOT a fallback to a different
+# model: Grant wants a real failure to look like a real failure. It only makes a
+# transient blip invisible, which is what overloads almost always are.
+TURN_RETRIES = int(os.environ.get("TURN_RETRIES", "3"))
+RETRY_BACKOFF = (4, 12, 30)   # seconds; overloads clear in seconds, not minutes
+
+_TRANSIENT = ("overloaded", "rate_limit", "429", " 500", " 502", " 503", " 529",
+              "timeout", "timed out", "connection reset", "internal server")
+
+
+def is_transient(err: str) -> bool:
+    """Busy/flaky provider — worth retrying. A malformed request would fail
+    identically forever, so those are surfaced immediately."""
+    e = (err or "").lower()
+    return any(t in e for t in _TRANSIENT)
 OMP_BIN = os.environ.get("OMP_BIN", os.path.expanduser("~/.local/bin/omp"))
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "3"))
 # Bot accounts allowed to wake/steer this bot like a human (e.g. the hub
@@ -502,7 +518,24 @@ class OmpAgent:
             send_typing(channel_id)
             bg.start()
             try:
-                return self._wait_for_response(), watermark
+                response = self._wait_for_response()
+                # A turn lost to a busy provider is not an answer. Re-send the
+                # same prompt to the same model rather than handing Grant an
+                # error he can only respond to by asking again himself.
+                for attempt in range(TURN_RETRIES):
+                    if not (response.startswith("[Agent error:")
+                            and is_transient(response)):
+                        break
+                    delay = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+                    log.warning("Provider busy (attempt %d/%d) — retrying in %ds: %s",
+                                attempt + 1, TURN_RETRIES, delay, response[:90])
+                    time.sleep(delay)
+                    if not self.is_alive():
+                        self.start()
+                    send_typing(channel_id)
+                    self._send_rpc("prompt", text)
+                    response = self._wait_for_response()
+                return response, watermark
             finally:
                 typing_stop.set()
                 bg.join(timeout=2)
