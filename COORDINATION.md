@@ -136,6 +136,23 @@ consequences worth designing around:
 
 ---
 
+## Scheduled work that needs a credential
+
+A cron job that just messages a bot leaves nothing behind if the bot never gets
+to it. Have the job **create the board task itself**, then tell the bot to work
+it — an open task is visible, a missed message is not.
+
+The bot marks it Done only when the deliverable is actually delivered. Not
+drafted, not "figures gathered" — delivered.
+
+Two guards worth copying from `Graice-Finance/monthly-qbo-report.sh`:
+
+- **`DRY=1`** prints what it would do and touches nothing. A monthly job is run
+  by hand far more often than it fires, and every hand-run is a live write.
+- **A date guard.** Run by hand on the wrong day, a "last month" calculation
+  names the wrong month and creates a real task for it. Refuse unless the date
+  is right, with `FORCE=1` to override.
+
 ## Checklist for a new bot
 
 1. Create its coordination channel in the Graice-Auth category.
