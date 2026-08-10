@@ -957,20 +957,19 @@ def restart_session(agent, channel_id: str, bot_user_id: str):
     return fresh
 
 
-def post_response(channel_id: str, response: str) -> bool:
-    """Post agent text to Discord. Returns True if the session should end."""
+def post_response(channel_id: str, response: str, speak: bool = False) -> bool:
+    """Post agent text to Discord. Returns True if the session should end.
+
+    `speak` is passed ONLY by the path that handles something said out loud in a
+    call. It is not inferred from "are we in a meeting": that made the bot read
+    its own Discord status aloud the moment it joined, so it appeared to start
+    talking to a room nobody had addressed it in. Answer the room when the room
+    asked; otherwise stay quiet.
+    """
     ended = SESSION_END_MARKER in response
     text = response.replace(SESSION_END_MARKER, "").strip()
 
-    # While sitting in a voice call, EVERYTHING said goes to the room as well as
-    # to Discord. This used to be gated on a one-shot "a meeting line is
-    # pending" flag, which meant the first answer was spoken and every later one
-    # silently was not — several spoken questions can arrive during a single
-    # turn, and a turn produces exactly one reply. Being in the call is the
-    # condition; nothing else.
-    global _MEETING_PENDING
-    if text:
-        _MEETING_PENDING = False
+    if speak and text:
         meeting = meeting_now()
         if meeting and meeting.get("voice"):
             speak_in_meeting(meeting["container"], text)
@@ -1079,7 +1078,7 @@ def main():
                         continue
                     if LEAVE_RE.search(line):
                         leave_meeting_now()
-                    if post_response(channel_id, response):
+                    if post_response(channel_id, response, speak=True):
                         agent = restart_session(agent, channel_id, bot_user_id)
                         continue
 
