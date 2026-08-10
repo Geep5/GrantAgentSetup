@@ -88,6 +88,16 @@ log = logging.getLogger(AGENT_NAME)
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 CHANNEL_ID = os.environ["DISCORD_CHANNEL_ID"]
 OMP_MODEL = os.environ.get("OMP_MODEL", "opus")
+# Two agents can share one Discord identity (the hub and the meeting bot are
+# both "Graice"). A bot ignores its own messages, so a relay between them would
+# be invisible — unless it is marked. A message carrying this prefix is treated
+# as incoming even when the author id is our own; a bot never emits the prefix
+# itself, so this cannot loop.
+RELAY_MARKER = os.environ.get("RELAY_MARKER", "[relay]")
+
+
+def is_relay(msg: dict) -> bool:
+    return (msg.get("content") or "").lstrip().startswith(RELAY_MARKER)
 # How many times to re-send the SAME prompt to the SAME model when the provider
 # is momentarily unavailable. This is deliberately NOT a fallback to a different
 # model: Grant wants a real failure to look like a real failure. It only makes a
@@ -482,7 +492,7 @@ class OmpAgent:
                     for m in sorted(new_msgs, key=lambda m: m["id"]):
                         if m["id"] > watermark:
                             watermark = m["id"]
-                        if m["author"]["id"] == bot_user_id or not (
+                        if (m["author"]["id"] == bot_user_id and not is_relay(m)) or not (
                                 m.get("content", "").strip() or m.get("attachments")):
                             continue
                         log.info("Steering message: %s", m.get("content", "")[:100])
@@ -980,7 +990,8 @@ def main():
         # Watermark starts at OUR last post, not the channel's newest message:
         # anything a human sent while no session was running is then steered
         # into the kickoff turn instead of being silently skipped.
-        bot_msgs = [m["id"] for m in initial if m["author"]["id"] == bot_user_id]
+        bot_msgs = [m["id"] for m in initial
+                    if m["author"]["id"] == bot_user_id and not is_relay(m)]
         if bot_msgs:
             watermark = max(bot_msgs)
         else:
@@ -1071,7 +1082,7 @@ def main():
             for msg in sorted(messages, key=lambda m: m["id"]):
                 if msg["id"] > watermark:
                     watermark = msg["id"]
-                if msg["author"]["id"] == bot_user_id or not (
+                if (msg["author"]["id"] == bot_user_id and not is_relay(msg)) or not (
                         msg.get("content", "").strip() or msg.get("attachments")):
                     continue
                 log.info("Message from %s: %s (%d attachments)",
