@@ -63,21 +63,25 @@ his window. `auth-holder.py start` prints whether it is genuinely signed in.
 - `❓ couldn't tell` → NOT a failed login. The page markers are wrong for what
   loaded. Say that plainly rather than making him sign in again.
 
-## 4. Tell the bot to retry — this is the step that is easy to forget
-
-The bot is still sitting there having given up. It polls **its own channel**,
-not the Graice-Auth one, so post there (`bot_channel` in `sessions.json`):
-
-> QuickBooks is signed in again — retry the job you were blocked on.
-
-Then clear the flag:
+## 4. Tell the bot to retry — do not skip this
 
 ```bash
+./tell-bot.sh quickbooks
 python3 auth-cleared.py quickbooks
 ```
 
-Until you do both, the board still shows it blocked and Grant will be asked
-again.
+`tell-bot.sh` posts into the bot's **own** channel — the one it actually polls,
+not the Graice-Auth channel it reported into. `auth-cleared.py` verifies and
+clears the flag (and posts the same nudge, so the loop closes even if you
+forget this step).
+
+**You CAN post in every bot's channel.** Your token has access; this has been
+tested. If you find yourself about to tell Grant "I can't post there, that one's
+yours" — you can, and asking him to do your job is the failure. Run the command.
+
+The one thing to check before claiming success: `auth-cleared.py` must say the
+session verified. Telling a bot to retry against a dead session moves the
+failure somewhere less obvious.
 
 ## 5. Tell Grant it is done
 
