@@ -5,6 +5,15 @@ description: Read Matcherino's QuickBooks Online — reports, invoices, transact
 
 # QuickBooks, through the signed-in holder
 
+**Check the session before starting work that depends on it:**
+
+```bash
+/Users/sharky/projekt/2/AuthSessions/check-session.sh quickbooks
+```
+
+Exit 0 = usable. Anything else = report it and wait, rather than discovering it
+halfway through and throwing the work away.
+
 ```bash
 /Users/sharky/projekt/2/AuthSessions/qbo.sh /app/reports
 /Users/sharky/projekt/2/AuthSessions/qbo.sh "https://qbo.intuit.com/app/invoices"
