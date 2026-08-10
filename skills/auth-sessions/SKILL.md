@@ -1,76 +1,99 @@
 ---
 name: auth-sessions
-description: Get Grant signed in to a service a bot is blocked on (QuickBooks and similar). Use when a bot reports needs-auth in a Graice-Auth channel, when Grant says "open a login" / "I'm ready" / "let's do the auth", or when he asks what is blocked on a sign-in.
+description: Get Grant signed in to a service a bot is blocked on, then tell that bot to retry. Use when a bot reports needs-auth in a Graice-Auth channel, when Grant says "ready" / "open a login" / "let's do the auth", or when he asks what is blocked on a sign-in.
 ---
 
-# Getting Grant signed in
+# Unblocking a bot that hit bad credentials
 
-A bot hits a login wall, says so in its Graice-Auth channel, and carries on with
-other work. You turn that into one short sitting for Grant, at a moment that
-suits him, and confirm it worked.
+The loop, start to finish:
+
+```
+bot's cron job fails on a dead credential
+   → it posts needs-auth in its Graice-Auth channel, and carries on with other work
+you  → decide whether it is worth interrupting Grant (see below)
+     → Grant says "ready"
+     → you spawn the sign-in, he signs in, you verify
+     → you tell the bot in ITS OWN channel to retry
+bot finishes the job
+```
+
+You are the only part of that chain that thinks. Everything else is a script.
 
 **You never type a credential.** Grant signs in on the service's own page —
-password, MFA, CAPTCHA. That is not a limitation to work around; it is the
-point. Do not offer to do it for him and do not ask him for a password.
+password, MFA, CAPTCHA. Do not offer to do it for him and never ask him for a
+password.
 
-## When he says "open a login" (or "ready", or "go")
+## 1. When a bot reports
 
-```bash
-cd /Users/sharky/projekt/2/AuthSessions
-./auth-spawn.sh quickbooks              # several services if they share a profile
-```
+Read it, and leave it. A separate job decides whether to interrupt Grant and
+writes him the DM. Do not also ping him — two of you asking is worse than one.
 
-It prints `url=…`. **Give him that link immediately** — it is a browser page,
-he does not need a VNC client. Then tell him what he is looking at.
-
-## While he is signing in
-
-```bash
-./auth-look.sh intuit-grant             # the profile name auth-spawn printed
-```
-
-Returns the URL, the page title, and the visible text. Poll it every ~15s and
-narrate: which step he is on, if it is asking for MFA, if it wants a company
-file, if it silently bounced back to the login page.
-
-`"sensitive": true` means the page text is withheld — a password field or a
-code entry. You still get URL and title, which is enough to say "that's the
-MFA step". **Do not ask him to read a code out to you.** You never need it.
-
-## When he says he is done
-
-```bash
-./auth-finish.sh intuit-grant quickbooks
-```
-
-This stops the browser CLEANLY, which is what writes the session to disk —
-killing it throws the sign-in away — then probes to confirm it stuck.
-
-- `✅ signed in` → tell him, and post `<service> ready, retry` into the
-  channel of every bot that was blocked (see `sessions.json` → `auth_channel`).
-- `⚠️ EXPIRED` → the login did not take. Say so plainly and offer to reopen it.
-- `❓ couldn't tell` → the probe markers are wrong for the page, not
-  necessarily a failed login. Say that, and check `auth-look.sh` output before
-  claiming either way.
-
-## Rules
-
-- **One sitting, many services.** Services sharing a `profile` in
-  `sessions.json` are cleared together. Never make him do two sittings for one
-  account.
-- **Never spawn a sitting he did not ask for.** A browser sitting open with a
-  live session, unattended, is a standing risk. If he goes quiet for ~15
-  minutes, run `./auth-finish.sh <profile>` to tear it down and tell him you
-  will reopen it whenever he is ready.
-- **Do not nag.** The nudge that got his attention already weighed whether it
-  was worth interrupting him. Once he has been asked, wait.
-- **Report back.** The bot that reported the problem is still blocked until you
-  tell it otherwise.
-
-## What is blocked right now
+If he asks what is blocked:
 
 ```bash
 cd /Users/sharky/projekt/2/AuthSessions && python3 authstate.py
 ```
 
-Shows each dead credential, which bots need it, and when they next run.
+## 2. When Grant says he is ready
+
+```bash
+cd /Users/sharky/projekt/2/AuthSessions
+./auth-local.sh quickbooks          # several at once if they share a profile
+```
+
+A Chrome window opens **on his own desktop** — clipboard, password manager and
+MFA all work there. Tell him it is open, and that you will wait.
+
+**Tell him to leave it open when he is done.** Services like Intuit keep the
+login in session cookies, which exist only while that browser runs; closing it
+first destroys the session no matter what we captured.
+
+## 3. When he says he is signed in
+
+```bash
+python3 auth-token.py quickbooks && python3 auth-holder.py start quickbooks
+```
+
+The first takes the live session out of his browser; the second transplants it
+into a headless browser that stays running, so the session survives him closing
+his window. `auth-holder.py start` prints whether it is genuinely signed in.
+
+- `✅ signed in` → go to step 4. Tell him he can close his window now.
+- `⚠️ signed out` → the session was already dead. Say so and offer to reopen it.
+- `❓ couldn't tell` → NOT a failed login. The page markers are wrong for what
+  loaded. Say that plainly rather than making him sign in again.
+
+## 4. Tell the bot to retry — this is the step that is easy to forget
+
+The bot is still sitting there having given up. It polls **its own channel**,
+not the Graice-Auth one, so post there (`bot_channel` in `sessions.json`):
+
+> QuickBooks is signed in again — retry the job you were blocked on.
+
+Then clear the flag:
+
+```bash
+python3 auth-cleared.py quickbooks
+```
+
+Until you do both, the board still shows it blocked and Grant will be asked
+again.
+
+## 5. Tell Grant it is done
+
+One line: which service, which bot is unblocked. He does not need the mechanics.
+
+## Timing, honestly
+
+**A QuickBooks session lasts about an hour** — measured, not guessed. So the
+bot should do its work promptly after a sign-in, and there is no point signing
+in "ahead of time" for a job later today. If Grant offers to do it early, tell
+him it will have expired.
+
+## Rules
+
+- **One sitting, many services.** Services sharing a `profile` are cleared
+  together. Never make him sign in twice for one account.
+- **Never spawn a sitting he did not ask for.**
+- **Never claim a login worked without running the verify step.** Telling a bot
+  to retry against a dead session just moves the failure somewhere less obvious.
