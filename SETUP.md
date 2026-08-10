@@ -142,6 +142,24 @@ close-out. Due Send-Date items override next_run.
 - **Crony dashboard**: if the human runs the Crony TUI, set CRONY_TOML in
   .env and add a job entry for this bot so it shows countdowns.
 
+## Phase 7 — coordination (if this bot needs a credential it cannot hold)
+
+Read `COORDINATION.md`. In short:
+
+1. Create the bot's coordination channel in the Graice-Auth category.
+2. Set `COORD_CHANNEL_ID` and `NEEDS` in its `.env`.
+3. Register the service in `AuthSessions/sessions.json` with `auth_channel`
+   pointing at that channel.
+4. Tell the bot, in its prompt, to run `needs-auth.sh` when it hits a login wall
+   and then KEEP WORKING — never stall, never hunt for a password.
+
+**Marco (finance) + QuickBooks is the working example.** Copy its shape rather
+than inventing a new one.
+
+Verify the bot actually polls the coordination channel before believing the
+loop works. A message that looks routed but is never read has been the single
+most common failure in this fleet.
+
 ## Operational lore (read once, save yourself the debugging)
 
 - **Prompt edits hot-reload** by killing the omp child process

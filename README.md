@@ -23,6 +23,7 @@ verifies each layer.
 | `SYSTEM_PROMPT.template.md` | The agent persona/mission with `{{PLACEHOLDERS}}` — encodes all learned behavior rules |
 | `.env.template` | Every knob, documented |
 | `SETUP.md` | **Start here** — instructions addressed to the installing agent |
+| `COORDINATION.md` | How a bot hands a blocked credential to the coordinator instead of failing silently or stalling — two-channel model, the auth loop, browser sessions |
 | `ask_peer.py` | Bridge to a sibling bot in a shared channel (ask → wait → collect) |
 | `presence.py` + `presence-start.sh` | Optional: keeps the bot showing online in Discord |
 
