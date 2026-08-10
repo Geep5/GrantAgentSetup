@@ -87,6 +87,12 @@ log = logging.getLogger(AGENT_NAME)
 
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 CHANNEL_ID = os.environ["DISCORD_CHANNEL_ID"]
+# A second channel this bot listens to: its private coordination channel with
+# Graice. Grant's own channel stays just that — his conversation with the bot —
+# so fleet plumbing (auth hand-offs, retries) never clutters it. Replies go back
+# to whichever channel asked.
+COORD_CHANNEL_ID = os.environ.get("COORD_CHANNEL_ID", "").strip()
+LISTEN_CHANNELS = [CHANNEL_ID] + ([COORD_CHANNEL_ID] if COORD_CHANNEL_ID else [])
 OMP_MODEL = os.environ.get("OMP_MODEL", "opus")
 # Two agents can share one Discord identity (the hub and the meeting bot are
 # both "Graice"). A bot ignores its own messages, so a relay between them would
@@ -1041,6 +1047,9 @@ def main():
             archive_session()
             return
 
+        marks = {ch: watermark if ch == channel_id else "" for ch in LISTEN_CHANNELS}
+        if COORD_CHANNEL_ID:
+            log.info("Also listening on coordination channel %s", COORD_CHANNEL_ID)
         log.info("Polling channel every %.0fs — session runs until %s",
                  POLL_INTERVAL, SESSION_END_MARKER)
         while True:
@@ -1074,13 +1083,19 @@ def main():
                         agent = restart_session(agent, channel_id, bot_user_id)
                         continue
 
-            try:
-                messages = get_messages(channel_id, limit=10, after=watermark)
-            except Exception as e:
-                log.error("Failed to fetch messages: %s", e)
-                continue
+            messages = []
+            for ch in LISTEN_CHANNELS:
+                try:
+                    for m in get_messages(ch, limit=10, after=marks.get(ch, watermark)):
+                        m["_channel"] = ch
+                        messages.append(m)
+                except Exception as e:
+                    log.error("Failed to fetch messages from %s: %s", ch, e)
             for msg in sorted(messages, key=lambda m: m["id"]):
-                if msg["id"] > watermark:
+                ch = msg.get("_channel", channel_id)
+                if msg["id"] > marks.get(ch, ""):
+                    marks[ch] = msg["id"]
+                if ch == channel_id and msg["id"] > watermark:
                     watermark = msg["id"]
                 if (msg["author"]["id"] == bot_user_id and not is_relay(msg)) or not (
                         msg.get("content", "").strip() or msg.get("attachments")):
@@ -1091,11 +1106,11 @@ def main():
                 try:
                     response, watermark = agent.send_prompt(
                         build_user_message(msg),
-                        channel_id, bot_user_id, watermark)
+                        ch, bot_user_id, watermark)
                 except Exception as e:
                     log.error("Agent error: %s", e)
                     response = f"[Bot error: {e}]"
-                if post_response(channel_id, response):
+                if post_response(ch, response):
                     agent = restart_session(agent, channel_id, bot_user_id)
                     continue
     finally:

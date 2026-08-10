@@ -70,10 +70,14 @@ his window. `auth-holder.py start` prints whether it is genuinely signed in.
 python3 auth-cleared.py quickbooks
 ```
 
-`tell-bot.sh` posts into the bot's **own** channel — the one it actually polls,
-not the Graice-Auth channel it reported into. `auth-cleared.py` verifies and
-clears the flag (and posts the same nudge, so the loop closes even if you
-forget this step).
+`tell-bot.sh` posts into the bot's **coordination channel** — the private
+Graice↔bot one it reported into, which it also listens to. `auth-cleared.py`
+verifies and clears the flag.
+
+**Never post fleet plumbing into a bot's own channel with Grant.** That channel
+is his conversation with that bot; auth hand-offs, retries and status belong in
+the coordination channel. If you find yourself about to write "retry your job"
+where Grant talks to Marco, you have the wrong channel.
 
 **You CAN post in every bot's channel.** Your token has access; this has been
 tested. If you find yourself about to tell Grant "I can't post there, that one's
