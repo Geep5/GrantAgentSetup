@@ -476,6 +476,12 @@ class OmpAgent:
 
             self._session_snapshot()
             self._send_rpc("prompt", text)
+            # If omp is still finishing the previous turn, a fresh prompt is
+            # REJECTED and the rejection gets posted to Grant as if it were the
+            # answer — his message is simply lost. This happens because we can
+            # decide a turn is over (quiet after agent_end) while omp is still
+            # working. The message belongs in the running turn: steer it.
+            self._collision_text = text
 
             typing_stop = threading.Event()
 
@@ -607,6 +613,18 @@ class OmpAgent:
                 log.info("omp %s: %s", "start" if ev_type.endswith("start") else "done", tool)
             if ev_type == "response" and not data.get("success"):
                 error = data.get("error", "unknown error")
+                if "already processing" in str(error).lower():
+                    # Not a failure — the turn is simply still running. Put the
+                    # message into it rather than throwing it away.
+                    pending = getattr(self, "_collision_text", None)
+                    if pending:
+                        log.info("Turn still running — steering the message in instead")
+                        try:
+                            self._send_rpc("steer", pending)
+                            self._collision_text = None
+                            continue
+                        except Exception as e:
+                            log.error("Failed to steer after collision: %s", e)
                 if not agent_started and not texts:
                     return f"[Agent error: {error}]"
                 log.warning("Steer error (continuing): %s", error)
