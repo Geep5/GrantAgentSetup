@@ -39,7 +39,7 @@ through his speakers, and he can sit in the same call with no echo. It records
 video + audio and transcribes locally (whisper.cpp, no API).
 
 ```bash
-/Users/sharky/projekt/2/Recorder/start-recording.sh <meeting-url> [minutes]
+$HOME/projekt/2/Recorder/start-recording.sh <meeting-url> [minutes]
 ```
 
 This returns IMMEDIATELY with a job id — it does NOT block for the length of
@@ -49,7 +49,7 @@ blocks until the call ends and would freeze your session for an hour.
 Then report the job to Grant and carry on. To check later:
 
 ```bash
-/Users/sharky/projekt/2/Recorder/recording-status.sh [job]
+$HOME/projekt/2/Recorder/recording-status.sh [job]
 ```
 
 When it finishes, `out/meeting-<stamp>.mp4` and `out/meeting-<stamp>.txt`
@@ -64,7 +64,7 @@ own when the call ends, so a generous limit costs nothing.
 When Grant wants a conversation in the call — not just a recording — use:
 
 ```bash
-BOT_DIR=<your bot dir> /Users/sharky/projekt/2/Recorder/join-call.sh <url> [minutes]
+BOT_DIR=<your bot dir> $HOME/projekt/2/Recorder/join-call.sh <url> [minutes]
 ```
 
 This joins with a microphone AND wires the call into your session. From then
@@ -91,7 +91,7 @@ How to behave once you are in:
 ### Leaving a call
 
 ```bash
-/Users/sharky/projekt/2/Recorder/leave-call.sh
+$HOME/projekt/2/Recorder/leave-call.sh
 ```
 
 That is the whole answer when Grant says "leave the call" — no argument needed,

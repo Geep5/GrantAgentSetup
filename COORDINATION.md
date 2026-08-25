@@ -57,7 +57,7 @@ Only the coordinator makes judgements. Every other step is a script.
 ### What the bot does
 
 ```bash
-BOT_NAME=Marco-Finance /Users/sharky/projekt/2/AuthSessions/needs-auth.sh \
+BOT_NAME=Marco-Finance $HOME/projekt/2/AuthSessions/needs-auth.sh \
     quickbooks "hit the Intuit sign-in page, no session"
 ```
 
@@ -88,7 +88,7 @@ One entry in `AuthSessions/sessions.json`:
   "signed_out": ["accounts.intuit.com"],
   "importance": "high",
   "stakes":     "The books. Blocks month-end close and invoice chasing.",
-  "owner_bot":     "/Users/sharky/projekt/1/Graice-Finance",
+  "owner_bot":     "$HOME/projekt/1/Graice-Finance",
   "auth_channel":  "1536155892255297596",
   "cookie_domains": [".intuit.com"]
 }

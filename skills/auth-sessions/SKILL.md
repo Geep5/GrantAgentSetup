@@ -31,13 +31,13 @@ writes him the DM. Do not also ping him — two of you asking is worse than one.
 If he asks what is blocked:
 
 ```bash
-cd /Users/sharky/projekt/2/AuthSessions && python3 authstate.py
+cd $HOME/projekt/2/AuthSessions && python3 authstate.py
 ```
 
 ## 2. When Grant says he is ready
 
 ```bash
-cd /Users/sharky/projekt/2/AuthSessions
+cd $HOME/projekt/2/AuthSessions
 ./auth-local.sh quickbooks          # several at once if they share a profile
 ```
 

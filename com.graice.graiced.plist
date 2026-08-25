@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  graiced — private Anytype middleware for the Graice bot identity.
+
+  A LaunchAgent, not a cron job, for one specific reason: graiced signs in with
+  a recovery phrase held in the login Keychain, and cron-spawned processes have
+  no access to it. Under cron this failed every boot with "no phrase in the
+  Keychain", so the REST API never opened and the bot had nothing to talk to.
+  Agents run inside the user's GUI login session, where the Keychain is
+  reachable.
+
+  KeepAlive restarts it if it dies; RunAtLoad starts it at login.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.graice.graiced</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/bridge/graiced</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/path/to/bridge</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Restart on crash, but not in a tight loop if it exits cleanly. -->
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Anytype must be up before graiced can start its own helper; if it is
+         not, graiced retries internally. Throttle so a persistent failure does
+         not spin. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/path/to/bridge/logs/graiced.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/bridge/logs/graiced.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>$HOME</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

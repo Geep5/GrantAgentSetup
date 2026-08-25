@@ -8,16 +8,16 @@ description: Read Matcherino's QuickBooks Online — reports, invoices, transact
 **Check the session before starting work that depends on it:**
 
 ```bash
-/Users/sharky/projekt/2/AuthSessions/check-session.sh quickbooks
+$HOME/projekt/2/AuthSessions/check-session.sh quickbooks
 ```
 
 Exit 0 = usable. Anything else = report it and wait, rather than discovering it
 halfway through and throwing the work away.
 
 ```bash
-/Users/sharky/projekt/2/AuthSessions/qbo.sh /app/reports
-/Users/sharky/projekt/2/AuthSessions/qbo.sh "https://qbo.intuit.com/app/invoices"
-/Users/sharky/projekt/2/AuthSessions/qbo.sh /app/homepage html      # raw HTML
+$HOME/projekt/2/AuthSessions/qbo.sh /app/reports
+$HOME/projekt/2/AuthSessions/qbo.sh "https://qbo.intuit.com/app/invoices"
+$HOME/projekt/2/AuthSessions/qbo.sh /app/homepage html      # raw HTML
 ```
 
 You are driving a browser that is **already signed in as Grant**. There is no
@@ -36,7 +36,7 @@ the holder's session has expired — Grant needs to sign in again
 That is not something you can repair. Report it and move on to other work:
 
 ```bash
-BOT_NAME=<your name> /Users/sharky/projekt/2/AuthSessions/needs-auth.sh quickbooks "session expired mid-task"
+BOT_NAME=<your name> $HOME/projekt/2/AuthSessions/needs-auth.sh quickbooks "session expired mid-task"
 ```
 
 That tells Graice, who picks a moment that suits Grant and walks him through a

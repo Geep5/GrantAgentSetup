@@ -1,265 +1,166 @@
-# Agent Setup — instructions for the INSTALLING AGENT
+# Setting up a bot
 
-You are an AI agent setting up this bridge bot on a new machine. This repo is
-the blueprint; your job is to fill in the blanks, verify each layer as you
-wire it, and leave a working, self-scheduling Discord agent behind. A human
-is available to answer questions and do the steps only they can do (OAuth
-clicks, Discord portal, secrets).
+Read this end to end before starting. Every step has a check; if a check fails,
+stop there rather than continuing — later steps assume the earlier ones held.
 
-Work through the phases in order. **Verify each phase before moving on** —
-every check here exists because skipping it cost a real debugging session.
+The person doing this needs to be at the machine: two steps require the Anytype
+app and one requires typing a recovery phrase, and none of them can be done by
+an agent over SSH.
 
-## Phase 0 — interview the human
+---
 
-Collect (ask in ONE batched message, not a drip):
-
-1. **Agent identity**: display name, one-line role, project description.
-2. **Discord**: bot token (create an app at discord.com/developers if needed).
-   ⚠️ REQUIRED: enable **Message Content Intent** (app → Bot → Privileged
-   Gateway Intents) — without it, Discord returns EMPTY `content` for other
-   users' messages even over REST, and the bot silently ignores everything
-   (no error anywhere; messages just look blank). The channel ID for
-   conversations (developer mode → right-click channel → Copy ID), and the
-   server invite if the bot isn't in the guild yet
-   (`https://discord.com/oauth2/authorize?client_id=<APP_ID>&scope=bot&permissions=117824`).
-3. **Anytype**: is Anytype installed and running locally? Which space? Get an
-   app key (Anytype → Settings → API keys, or reuse an existing MCP
-   registration's bearer). If no Anytype: the bot still works, but loses the
-   task board + deferred sends — confirm they want that.
-4. **omp**: run `omp update` first, then `omp --version`. **Pin the EXACT model
-   id in .env — never a fuzzy alias.** Aliases silently resolve to older
-   models: `opus` still resolved to `claude-opus-4-8` long after Opus 5
-   shipped, so a whole fleet ran a generation behind while the config looked
-   correct. Run `omp models`, copy the exact id, and include the effort
-   suffix: `OMP_MODEL=claude-opus-5:xhigh`. Gotcha: a provider prefix and an
-   effort suffix together are rejected (`anthropic/claude-opus-5:xhigh`
-   fails) — use one or the other.
-5. **Optional extras**: peer bot channel? Crony dashboard file? Remotion?
-   browseruse? presence daemon (bot shows online 24/7)?
-
-## Phase 1 — prerequisites (verify, don't assume)
-
-- **Python ≥ 3.10**: `python3 --version`. On macOS python.org installs, HTTPS
-  fails until certificates are installed — test with
-  `python3 -c "import urllib.request; urllib.request.urlopen('https://discord.com')"`.
-  If SSL errors: run `/Applications/Python*/Install Certificates.command`.
-  Record the working interpreter as `PYTHON_BIN` in .env.
-- **omp**: `omp -p --no-session "Reply with exactly: OK"` must print OK. If it
-  errors about credentials, the human runs `omp` interactively and `/login`.
-  Note: omp's OAuth refresh tokens can expire — this exact failure mode will
-  recur someday; the bot posts a clear error to the channel when it does.
-- **Anytype API** (if used): `curl -s http://localhost:31009/v1/spaces -H
-  "Authorization: Bearer <key>" -H "Anytype-Version: 2025-11-08"` returns JSON.
-
-## Phase 2 — Anytype board (if used)
-
-1. Find or create the task type in the target space (layout `action`), e.g.
-   key `myproject_task`. The type object's ID doubles as the list/board ID —
-   `GET /spaces/$S/lists/<type_id>/views/default/objects` works directly.
-2. Ensure these properties exist in the space and are attached to the type
-   (create with explicit snake_case keys — auto-generated keys from emoji
-   names come out mangled like `[?]_send_date`):
-   - `status` (select; tags: To Do / In Progress / Waiting / Done)
-   - `next_action` (text) · `done` (checkbox) · `send_date` (date)
-   - optionally `area` (select) for project bots
-3. Record space ID, board/type ID, type key, and the actual `send_date` key.
-
-## Phase 3 — configure
-
-1. `cp .env.template .env` and fill every value from the interview. Set
-   `PATH=` explicitly in .env — **cron's PATH is minimal** and this is the #1
-   silent breakage (omp, npx, browseruse all live outside /usr/bin).
-   `chmod 600 .env`.
-2. `cp SYSTEM_PROMPT.template.md SYSTEM_PROMPT.md`, replace every
-   `{{PLACEHOLDER}}`, delete OPTIONAL sections that don't apply. Read the
-   whole thing — it encodes hard-won behavior rules (bias-to-action,
-   whole-turn honesty, session close-out protocol).
-3. If this runtime lives inside a project repo, gitignore it:
-   `state/ logs/ sessions/ attachments/ .env`  (a `.gitignore` ships in this
-   repo for the standalone case).
-
-## Phase 4 — verify the wiring (before any cron)
-
-Run each; fix before proceeding:
-
-```bash
-# token + channel reachable
-python3 - <<'EOF'
-import bot  # imports validate .env; then:
-print(bot.get_bot_user_id())
-print(bot.get_messages(bot.CHANNEL_ID, limit=1) is not None and "channel OK")
-EOF
-```
-
-Then a live smoke test: `./start.sh`, watch `logs/bot.log` until
-"Polling channel" appears and the kickoff message lands in the channel. The
-first session is REAL — the agent will greet the human and start work.
-
-## Phase 5 — cron
+## 0. What you are building
 
 ```
-*/10 * * * * /abs/path/to/start.sh
+Anytype app  ──┐
+(you, @you)    │
+               ├── your desktop middleware  :31009   ← your account
+               │
+bot account ───┴── graiced's middleware     :31010   ← the bot's account
+                          ▲
+                          │  REST + grpc-web
+                   graiced bot  ── stdio ──  omp agent
 ```
 
-(Stagger the minute — `2-59/10` etc. — if multiple bots share the machine.)
-Optional presence daemon: `*/5 * * * * /abs/path/to/presence-start.sh`.
+Two Anytype accounts, two middlewares, one bot process. The bot talks only to
+its own middleware, which is why its messages arrive as the bot rather than as
+you.
 
-The scheduling model: the tick is cheap; `state/next_run` is the real gate,
-and the agent sets it itself by asking "when should I run next?" at each
-close-out. Due Send-Date items override next_run.
+---
 
-## Phase 6 — optional extras
+## 1. Create the bot's Anytype account
 
-- **Skills for omp**: two scopes. Global — symlink into `~/.agents/skills/`
-  (every agent on the machine gets it). Per-bot — symlink into
-  `<bot cwd>/.agents/skills/` (omp walks up from its cwd), useful when a
-  skill should reach some bots but not others. Gitignore `.agents/` if the
-  bot cwd lives inside a project repo.
-- **gws (Google Workspace CLI)** — a bot may hold SEVERAL Google identities:
-  1. once per account, with a browser: `./gws-bootstrap.sh <account>` → vaults
-     it in `~/.config/gws-vault/<account>/`
-  2. list them in the bot's `.env`: `GWS_ACCOUNTS=a@x.com,b@x.com`
-  3. `./gws-seed.sh <bot-dir>` → private credential dir per account under
-     `<bot>/gws/<account>/`; instant, no browser, safe to re-run any time
-  4. wire the skill so the agent knows the rules:
-     `mkdir -p <bot>/.agents/skills && ln -s <this-repo>/skills/gws-accounts <bot>/.agents/skills/gws-accounts`
-     and keep the Google Workspace section of the prompt template.
-  The agent then runs `./gws-as <account> <gws args>` (never bare `gws`).
-  **Full model, failure modes and bootstrap details: see GWS.md.** Three things make this
-  mandatory rather than tidy: the default OS keychain **cannot be unlocked from
-  cron**, gws **DELETES the credentials file** when it fails to decrypt (so one
-  shared dir means one bot's bad day destroys auth for the whole fleet), and a
-  single config dir can only ever hold one account. Each account also needs
-  `serviceusage.serviceUsageConsumer` on the OAuth client's GCP project — that
-  403 recurs for every new account. Note gws has no service-account or
-  domain-wide-delegation path (the vendored yup-oauth2 crate supports them; the
-  CLI exposes no way in), so per-user OAuth is the only option today; DWD would
-  be the right upgrade past a handful of accounts.
-- **browseruse**: `pipx/npm` per its repo; symlink the venv binaries into
-  `~/.local/bin` and keep that dir in .env PATH.
-- **Remotion**: scaffold a workspace (`npx create-video`), note its path in
-  the prompt's Video section.
-- **Crony dashboard**: if the human runs the Crony TUI, set CRONY_TOML in
-  .env and add a job entry for this bot so it shows countdowns.
+In the Anytype app: sign out, create a new account, give it a name and avatar —
+these are what people will see in chat. Write the recovery phrase down.
 
-## Phase 7 — coordination (if this bot needs a credential it cannot hold)
+Then sign back into your own account.
 
-Read `COORDINATION.md`. In short:
+**Check:** two account directories exist.
 
-1. Create the bot's coordination channel in the Graice-Auth category.
-2. Set `COORD_CHANNEL_ID` and `NEEDS` in its `.env`.
-3. Register the service in `AuthSessions/sessions.json` with `auth_channel`
-   pointing at that channel.
-4. Tell the bot, in its prompt, to run `needs-auth.sh` when it hits a login wall
-   and then KEEP WORKING — never stall, never hunt for a password.
+```sh
+ls -1d ~/Library/Application\ Support/anytype/data/*/ | wc -l   # ≥ 2
+```
 
-**Marco (finance) + QuickBooks is the working example.** Copy its shape rather
-than inventing a new one.
+> The phrase cannot be rotated: it *is* the account. Treat it like a private
+> key, and never paste it into a chat window — including a chat with an agent
+> helping you set this up.
 
-Verify the bot actually polls the coordination channel before believing the
-loop works. A message that looks routed but is never read has been the single
-most common failure in this fleet.
+---
 
-## Operational lore (read once, save yourself the debugging)
+## 2. Share a space with the bot
 
-- **Prompt edits hot-reload** by killing the omp child process
-  (`pgrep -P $(cat state/lock) -f omp | xargs kill`) — the bridge restarts it
-  with `--continue` + fresh prompt on the next message. **bot.py edits need a
-  full process restart** (kill the pid in `state/lock`, rm the lock, run
-  start.sh; the session resumes).
-  **Caveat that has bitten twice: a hot-reload does NOT rewrite what a running
-  session already believes.** If a change invalidates something the agent has
-  been doing all session (a renamed type, a moved board, a new convention), it
-  can keep acting on the stale belief from its context. Do a full restart for
-  those, not just an omp-child kill.
-- **Never regress the answer-extraction pipeline** — this broke four
-  different ways before it stuck, and every regression looks the same from
-  the outside: the bot posts a terse sign-off ("Parked", "see the link
-  above" with no link) while its real answer sits unposted in the session
-  file. The invariants: (1) `_extract_text` returns ALL assistant text of
-  the turn, not just the last message; (2) its turn boundary is a
-  bridge-formatted user message (`[Discord message from` / `[System]`) —
-  omp injects other user-role entries (rule interrupts, summaries) that
-  must not cut the walk short; (3) one prompt can produce SEVERAL
-  agent_start/agent_end cycles (omp's rule engine and todo reminders
-  restart the agent mid-turn) and each agent_end may carry only its own
-  message slice — `_wait_for_response` must wait for quiescence and
-  `_merge_turn_texts` must stitch every cycle's text. If the symptom ever
-  returns, diff the channel posts against the session `.jsonl` first.
-- **A wait period is not deafness.** `state/next_run` only schedules the
-  auto-ping. The cron gate wakes early when a human posted after the bot's
-  last message (`unseen_human_messages`), and the kickoff watermark starts
-  at the bot's own last post so anything sent while no session was running
-  is steered into the kickoff turn instead of silently skipped. Worst-case
-  reply latency during a wait = one cron interval.
-- Restrictive prompt language over-generalizes: every "never do X" needs a
-  "this does NOT restrict Y" or the model over-complies (see Bias to action).
-- Peer-bot bridges: agents answering can take minutes; on timeout NEVER
-  re-ask (the question posted) — `--listen` re-attaches.
-- **A bot that never responds and never errors = missing Message Content
-  Intent.** Discord blanks `content` in REST responses for apps without the
-  intent (own messages and mentions excepted), so the bridge sees arrivals
-  but skips them as empty. Toggle it in the portal; effect is immediate.
-- macOS keychain-backed CLIs (gws, gh, etc.) can fail from cron/background
-  shells; prefer file-based credential backends where offered. For GitHub
-  pushes specifically: put `GH_TOKEN=$(gh auth token)` in .env — the gh git
-  credential helper honors it without touching the keychain.
-- **Google OAuth (gws) has two time bombs — defuse both at install time:**
-  1. An OAuth app left in **"Testing"** publishing status gets ALL its
-     refresh tokens expired by Google after **7 days** — the bot's Google
-     access dies weekly, on schedule. Fix once: Cloud Console → APIs &
-     Services → OAuth consent screen → **Publish app** (In production).
-     Unverified-app warnings on login are fine for a personal tool;
-     production refresh tokens don't expire.
-  2. Google's consent screen shows **per-scope checkboxes**, and a human
-     clicking through fast leaves some unchecked — the login "succeeds"
-     but the token is missing scopes. The symptom is a weird split (Drive
-     works, Gmail 403 "insufficient authentication scopes"), which looks
-     like a backend/keyring problem but isn't. When (re)authing, check
-     EVERY box. To diagnose scope splits: `gws auth status` shows the
-     *requested* scopes; what Google actually *granted* only shows up by
-     probing each service. Always run
-     `GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file gws auth login` and verify
-     Gmail from a bare cron-like env before calling it done.
-- **Re-authing omp does NOT fix a running bot** — restart it. A bot's omp child
-  holds its credentials from the moment it was spawned. If `/login` is re-run
-  (or the omp binary self-updates) while bots are alive, those children keep
-  failing with `[Agent error: No API key found for anthropic ... create
-  ~/.omp/agent/agent.db]` even though omp works perfectly from your shell.
-  Diagnose it in one step: spawn omp the way bot.py does — same cwd, same .env,
-  `--mode rpc` — and if that succeeds, the credentials are fine and the running
-  children are simply stale. Kill the omp child AND the bot pid, then restart.
-- **An agent on the WRONG Google identity is worse than one that can't start.**
-  A single shared `~/.config/gws` holds exactly one account, so authorizing a
-  second account silently repoints every bot at it — drafts land in the wrong
-  mailbox and nothing looks broken. (Found live: the whole fleet was quietly
-  acting as a different person than its prompts claimed.) Hence one credential
-  dir per bot per account, and a boot preflight that asserts the live identity
-  matches before any work. `state/gws_status` records the verdict.
-- **A bot can destroy its own .env — instruct append-only.** Two bots wiped
-  their `DISCORD_BOT_TOKEN` (and everything else) when told to "put the
-  secret in your graice/.env": they rewrote the file instead of appending,
-  and only failed to start at the next reboot. Any instruction that has an
-  agent touch a config it depends on must say: **append only, never rewrite
-  the file, never touch keys you didn't add.**
-- **Bot-to-bot coordination**: `WAKE_BOT_IDS` in .env lists bot account ids
-  that this bot should treat like a human — their posts wake it from a
-  gated sleep and steer a running session. Used so a hub/coordinator bot can
-  relay to workers. Without it, bots ignore all other bots by default.
-- **KPI reporting (optional)**: a bot can publish one metric by writing
-  `state/kpi.json` (`{metric, value, as_of, target?, total_all_time?}`) —
-  ideally from a `kpi.py` in its runtime dir that measures real production
-  data. Rule that matters: if it can't be measured, write NOTHING and exit
-  non-zero. A missing reading is honest; a fabricated one silently corrupts
-  every decision made from it.
-- If a session wedges: kill pid in `state/lock`, `rm state/lock`, next tick
-  resumes it. `rm -rf sessions/main` forces a fresh session (history lost).
+As **your** account, pick the space the bot will work in.
 
-## Done criteria
+1. Space settings → Share → create an invite link.
+2. Open the link as the **bot** account and request to join.
+3. Back as yourself: Members → approve it as **Editor**.
 
-- Kickoff message posted in the channel and the human replied successfully.
-- A full close-out happened at least once (task marked done on the board,
-  next_run written, [SESSION_END] observed, session archived to
-  `sessions/done-*`).
-- Cron tick verified: `grep "stand" logs/bot.log` shows gated ticks, or a
-  session starts when due.
+Editor is required — the bot maintains task objects. Viewer makes it read-only.
+
+**Check:** the space lists two active members.
+
+---
+
+## 3. Build
+
+```sh
+cd bridge && odin build . -out:graiced
+```
+
+**Check:** `./graiced version` prints a middleware version.
+
+---
+
+## 4. Bootstrap the bot's middleware
+
+```sh
+./graiced bootstrap
+```
+
+It starts a private middleware, asks for the **bot's** recovery phrase (nothing
+echoes), signs in, relocates the JSON API to :31010 and mints a scoped API key.
+
+**Check:** it ends with `account selected ✓` and prints an
+`ANYTYPE_BOT_IDENTITY=` line. Keep that value.
+
+Store the phrase in the login Keychain so the daemon can sign in unattended:
+
+```sh
+security add-generic-password -a graiced -s graiced-mnemonic -U -w
+```
+
+It prompts twice and echoes nothing, so the phrase never reaches your shell
+history or the process table.
+
+> The phrase is needed at *every* start, not once: Anytype's own app does the
+> same thing, which is why it keeps yours in the Keychain too. No app token is
+> issued that could replace it.
+
+---
+
+## 5. Run the middleware under launchd, not cron
+
+Copy `com.graice.graiced.plist` to `~/Library/LaunchAgents/`, adjust the paths,
+then:
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.graice.graiced.plist
+```
+
+**Check:** `curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat ~/.graiced/account/api_key)" \
+  -H 'Anytype-Version: 2025-11-08' http://127.0.0.1:31010/v1/spaces` prints `200`.
+
+> **Cron cannot do this step.** Cron jobs have no access to the login Keychain,
+> so the phrase read fails, the middleware never signs in, and the API never
+> opens — silently, every boot. A LaunchAgent runs inside your GUI session where
+> the Keychain is reachable. This was found the hard way.
+
+---
+
+## 6. Configure the bot
+
+Copy `.env.template` to your bot directory as `.env` and fill in:
+
+| Key | Where it comes from |
+|---|---|
+| `ANYTYPE_API_BASE` | `http://127.0.0.1:31010` |
+| `ANYTYPE_API_KEY` | `~/.graiced/account/api_key` |
+| `ANYTYPE_BOT_IDENTITY` | printed by `bootstrap` — makes attribution exact |
+| `ANYTYPE_CHAT_SPACE_ID` | the shared space |
+| `ANYTYPE_CHAT_ID` | a chat in it (`graiced surfaces` lists them) |
+| `OMP_BIN`, `OMP_MODEL` | your omp install |
+
+Copy `SYSTEM_PROMPT.template.md` to `SYSTEM_PROMPT.md` and edit the identity
+paragraph and mission. Leave the length rule alone until you have watched it
+run — it exists because replies were averaging 1,800 characters, which is
+unreadable on a phone.
+
+**Check:** `graiced surfaces` lists the chats and discussions it can see.
+
+---
+
+## 7. Run the bot
+
+```sh
+./start.sh          # by hand
+*/10 * * * * /path/to/start.sh    # or from cron; it gates itself on state/lock
+```
+
+Cron is fine *here* — this step needs no Keychain.
+
+**Check:** send a message in the space. Within ~3s the log shows
+`message from …`, a 👀 appears on your message, and a reply arrives under it.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `no phrase in the Keychain` | started from cron — use the LaunchAgent |
+| Messages read as empty | block-format text; needs the grpc fallback (built in) |
+| Bot answers as *you* | pointed at :31009 — check `ANYTYPE_API_BASE` |
+| Replies invisible in the app | replying to a reply; the bridge threads to the root |
+| Asterisks in messages | markdown not converted to marks |
+| 👀 never clears | the turn crashed — see `logs/bot.log` |
+| Bot silent after a restart | it is finishing a kickoff turn before polling |
