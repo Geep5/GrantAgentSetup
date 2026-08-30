@@ -34,7 +34,9 @@ steer_start :: proc(b: ^Bot, c: Chat, from_mark: string) -> ^Steer {
 	s.chat = c
 	s.mark = strings.clone(from_mark)
 	s.running = true
-	thread.create_and_start_with_poly_data(s, steer_loop)
+	// self_cleanup: the thread detaches and frees its own ^Thread on exit.
+	// Without it every turn leaks a pthread (its stack is kept until join).
+	thread.run_with_poly_data(s, steer_loop)
 	return s
 }
 
@@ -58,6 +60,10 @@ steer_stop :: proc(s: ^Steer) -> string {
 steer_loop :: proc(s: ^Steer) {
 	for {
 		time.sleep(STEER_POLL)
+		// This thread has its OWN temp arena (it is thread-local) and nothing
+		// else resets it: without this, a long turn chains a 4 MiB block per
+		// poll for as long as the turn runs.
+		defer free_all(context.temp_allocator)
 		sync.mutex_lock(&s.mutex)
 		stopping := s.stop
 		sync.mutex_unlock(&s.mutex)

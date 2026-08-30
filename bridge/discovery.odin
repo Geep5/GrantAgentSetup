@@ -99,7 +99,8 @@ discover_chats :: proc(cfg: Config, s: ^Surfaces) {
 	}
 	msg := make([dynamic]u8, context.temp_allocator)
 	pb_string(&msg, 1, "graiced-bot")
-	res := rpc_call(cfg, "ChatSubscribeToMessagePreviews", msg[:], s.token)
+	// Temp: the payload is parsed here and never escapes (see fill_blank_text).
+	res := rpc_call(cfg, "ChatSubscribeToMessagePreviews", msg[:], s.token, context.temp_allocator)
 	if len(res.err) > 0 || len(rpc_error(res.payload)) > 0 {
 		return
 	}
@@ -149,7 +150,7 @@ object_discussion :: proc(cfg: Config, s: ^Surfaces, object_id: string) -> strin
 	pb_string(&msg, 1, object_id)
 	pb_string(&msg, 2, object_id)
 	pb_string(&msg, 5, cfg.space_id)
-	res := rpc_call(cfg, "ObjectShow", msg[:], s.token)
+	res := rpc_call(cfg, "ObjectShow", msg[:], s.token, context.temp_allocator)
 	if len(res.err) > 0 {
 		return ""
 	}
@@ -198,14 +199,17 @@ discover_discussions :: proc(cfg: Config, s: ^Surfaces) {
 	probed := 0
 	for oid in space_objects(cfg) {
 		if did, cached := s.discussions[oid]; cached {
-			append(&s.chats, Chat{id = did, kind = "discussion", host_id = oid})
+			// Cloned: `oid` comes out of space_objects, which allocates into
+			// the temp arena — and s.chats outlives the poll iteration that
+			// resets it. Aliasing it here would dangle every host_id.
+			append(&s.chats, Chat{id = did, kind = "discussion", host_id = strings.clone(oid)})
 			continue
 		}
 		did := object_discussion(cfg, s, oid)
 		probed += 1
 		if len(did) > 0 {
 			s.discussions[strings.clone(oid)] = did
-			append(&s.chats, Chat{id = did, kind = "discussion", host_id = oid})
+			append(&s.chats, Chat{id = did, kind = "discussion", host_id = strings.clone(oid)})
 			dirty = true
 		}
 	}
@@ -235,6 +239,9 @@ discover_all :: proc(cfg: Config, s: ^Surfaces) -> []Chat {
 		s.chats = previous
 		return s.chats[:]
 	}
+	// `host_id` is uniquely owned by the discarded list; `id` aliases the
+	// s.discussions value, so it must NOT be freed here.
+	for c in previous do delete(c.host_id)
 	delete(previous)
 	fmt.printfln("graiced: %d surface(s)", len(s.chats))
 	return s.chats[:]

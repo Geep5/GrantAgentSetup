@@ -311,7 +311,10 @@ fill_blank_text :: proc(cfg: Config, s: ^Surfaces, chat_id: string, ms: []Messag
 	pb_string(&msg, 1, chat_id)
 	pb_tag(&msg, 3, 0)
 	pb_varint(&msg, 50)
-	res := rpc_call(cfg, "ChatGetMessages", msg[:], s.token)
+	// Temp, not the heap: the payload is consumed in this proc, and the HTTP
+	// accumulator inside http_request cannot be freed by the caller anyway
+	// (the body it returns is a subslice of it, not the allocation base).
+	res := rpc_call(cfg, "ChatGetMessages", msg[:], s.token, context.temp_allocator)
 	if len(res.err) > 0 || len(rpc_error(res.payload)) > 0 {
 		return 0
 	}

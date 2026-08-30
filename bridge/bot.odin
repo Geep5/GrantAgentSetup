@@ -277,6 +277,13 @@ cmd_bot :: proc(cfg: Config) -> int {
 
 	for {
 		time.sleep(poll)
+		// Everything below allocates into the temp arena — HTTP bodies, JSON
+		// trees, message clones — and nothing else reclaims it. Odin's default
+		// temp allocator is a growing arena of 4 MiB heap blocks, so a loop
+		// that never resets it chains one block after another forever: this is
+		// what grew the bot to ~90 GB of footprint (23k blocks) in two days.
+		// Anything that must outlive an iteration is heap-cloned explicitly.
+		defer free_all(context.temp_allocator)
 
 		// Rediscover periodically: objects and chats appear over time, and a
 		// new one should not need a restart to be noticed.
@@ -317,7 +324,9 @@ cmd_bot :: proc(cfg: Config) -> int {
 				// reply-to-a-reply has nowhere to display, so the answer is
 				// stored correctly and shown nowhere. Grant replying inside an
 				// existing thread is the common case, so this is not an edge.
-				b.reply_to[strings.clone(c.id)] = thread_root(fresh, m)
+				// Heap-cloned: thread_root returns an id out of `fresh`, which
+				// is temp-allocated and gone at the end of this iteration.
+				b.reply_to[strings.clone(c.id)] = strings.clone(thread_root(fresh, m))
 				// Mark the message while the turn runs. Driven by omp's event
 				// stream, so a frozen marker means wedged, not merely slow.
 				w := working_start(b, c.id, m.message_id)

@@ -14,6 +14,7 @@
 // restart if it dies.
 package main
 
+import "base:runtime"
 import "core:fmt"
 import "core:net"
 import "core:os"
@@ -181,6 +182,10 @@ main :: proc() {
 		os.exit(cmd_surfaces(cfg))
 	}
 
+	if len(os.args) > 1 && os.args[1] == "soak" {
+		os.exit(cmd_soak(cfg))
+	}
+
 	if len(os.args) > 1 && os.args[1] == "ask" {
 		os.exit(cmd_ask(cfg))
 	}
@@ -258,6 +263,47 @@ bot_session_dir :: proc(cfg: Config) -> string {
 
 bot_system_prompt :: proc(cfg: Config) -> string {
 	return fmt.tprintf("%s/SYSTEM_PROMPT.md", cfg.bot_dir)
+}
+
+// Memory soak for the poll loop's read-only core.
+//
+// Exists because the leak it guards against is invisible in normal operation:
+// the temp arena grows in 4 MiB heap blocks and nothing reclaims them, so the
+// bot's footprint climbed ~2 GB/hour with an RSS that looked healthy (the
+// blocks get compressed and swapped, not resident). `total_capacity` below is
+// the honest number.
+//
+// SOAK_NO_RESET=1 skips the per-iteration reset, reproducing the old
+// behaviour for comparison.
+cmd_soak :: proc(cfg: Config) -> int {
+	iterations := 200
+	if len(os.args) > 2 {
+		if n, ok := strconv.parse_int(os.args[2]); ok do iterations = n
+	}
+	reset := len(env_or("SOAK_NO_RESET", "")) == 0
+	fmt.printfln("soak: %d iteration(s), per-iteration temp reset: %v", iterations, reset)
+
+	s := new(Surfaces)
+	discussions_load(cfg, s)
+	b := new(Bot)
+	b.cfg = cfg
+	b.surfaces = s
+
+	// The default temp allocator IS a runtime.Arena wrapper; read it through
+	// the context handle rather than the runtime's thread-local global.
+	temp := (^runtime.Default_Temp_Allocator)(context.temp_allocator.data)
+	for i in 0 ..< iterations {
+		for c in discover_all(cfg, s) {
+			fresh := messages(cfg, c.id, 10, "", context.temp_allocator)
+			_ = fill_blank_text(cfg, s, c.id, fresh, context.temp_allocator)
+		}
+		if reset do free_all(context.temp_allocator)
+		if i % 20 == 0 || i == iterations - 1 {
+			fmt.printfln("  iter %4d  temp arena: used %5.1f MB  capacity %7.1f MB",
+				i, f64(temp.arena.total_used) / 1048576.0, f64(temp.arena.total_capacity) / 1048576.0)
+		}
+	}
+	return 0
 }
 
 cmd_surfaces :: proc(cfg: Config) -> int {
